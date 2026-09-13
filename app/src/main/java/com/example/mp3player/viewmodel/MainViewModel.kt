@@ -1,11 +1,14 @@
 package com.example.mp3player.viewmodel
 
 import android.app.Application
-import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import android.media.MediaMetadataRetriever
+import android.os.Environment
+import androidx.core.content.FileProvider
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.arthenica.ffmpegkit.*
 import com.example.mp3player.asr.OfflineAsrEngine
 import com.example.mp3player.asr.WaveformExtractor
 import com.example.mp3player.data.model.*
@@ -13,18 +16,11 @@ import com.example.mp3player.data.repository.AudioRepository
 import com.example.mp3player.ffmpeg.AudioCutterConcatenator
 import com.example.mp3player.ffmpeg.ExportAudioFormat
 import com.example.mp3player.ffmpeg.ExportResult
-import com.arthenica.ffmpegkit.FFmpegKit
-import com.arthenica.ffmpegkit.FFmpegSessionCompleteCallback
-import com.arthenica.ffmpegkit.FFprobeKit
-import com.arthenica.ffmpegkit.StatisticsCallback
-import com.arthenica.ffmpegkit.ReturnCode
-import android.media.MediaMetadataRetriever
-import android.os.Environment
-import androidx.core.content.FileProvider
-import java.io.File
 import com.example.mp3player.player.AudioPlayerManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import java.io.File
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 导航页面定义（支持音乐库-文稿-剪辑-裁剪-格式转换-设置 六屏左右滑动切换）
@@ -125,7 +121,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     // 收藏状态集合
-    private val _favoriteIds = MutableStateFlow<Set<Long>>(prefs.getFavoriteIds())
+    private val _favoriteIds = MutableStateFlow(prefs.getFavoriteIds())
     val favoriteIds: StateFlow<Set<Long>> = _favoriteIds.asStateFlow()
 
     // 新导入音频的高亮提示（在音频库中闪烁一下，不跳转页面）
@@ -141,7 +137,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         highlightJob?.cancel()
         _highlightedAudioId.value = audioId
         highlightJob = viewModelScope.launch {
-            delay(2500)
+            delay(2500.milliseconds)
             if (_highlightedAudioId.value == audioId) {
                 _highlightedAudioId.value = null
             }
@@ -204,15 +200,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // 优化：预计算哪些字在标记片段中，避免在 UI 渲染循环中进行 O(W*S) 查找
     val wordsInSegmentsIds: StateFlow<Set<Long>> = combine(_transcriptResult, _segments) { transcript, segs ->
-        if (transcript == null || segs.isEmpty()) return@combine emptySet<Long>()
+        if (transcript == null || segs.isEmpty()) return@combine emptySet()
         // 将片段合并为有序且互不重叠的区间后二分查找，整体复杂度从 O(W*S) 降为 O(W log S)
         val merged = mutableListOf<Pair<Long, Long>>()
-        for (seg in segs.sortedBy { it.startMs }) {
+        for ((_, _, _, startMs, endMs) in segs.sortedBy { it.startMs }) {
             val last = merged.lastOrNull()
-            if (last != null && seg.startMs <= last.second) {
-                merged[merged.size - 1] = last.first to maxOf(last.second, seg.endMs)
+            if (last != null && startMs <= last.second) {
+                merged[merged.size - 1] = last.first to maxOf(last.second, endMs)
             } else {
-                merged.add(seg.startMs to seg.endMs)
+                merged.add(startMs to endMs)
             }
         }
         val starts = merged.map { it.first }
@@ -334,7 +330,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (audio != null) {
                     playerManager.playAudio(audio, _allAudios.value)
                     playerManager.pause()
-                    delay(500)
+                    delay(500.milliseconds)
                     playerManager.seekTo(lastPos)
                     loadAudioDetails(audio)
                 }
@@ -366,7 +362,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 周期性保存进度
         viewModelScope.launch {
             while (isActive) {
-                delay(5000)
+                delay(5000.milliseconds)
                 if (isPlaying.value) {
                     prefs.saveLastPlayedPositionMs(currentPositionMs.value)
                 }
@@ -557,8 +553,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     prefs.deleteAudioData(id)
                     
                     // 2. 如果是内部导入的文件，物理删除
-                    val file = java.io.File(audio.filePath)
-                    val internalDir = getApplication<Application>().getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC)
+                    val file = File(audio.filePath)
+                    val internalDir = getApplication<Application>().getExternalFilesDir(Environment.DIRECTORY_MUSIC)
                     if (internalDir != null && audio.filePath.startsWith(internalDir.absolutePath)) {
                         if (file.exists()) {
                             file.delete()
@@ -600,8 +596,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 if (deleteFile) {
                     // 2a. 连原文件一起删除（仅限 App 内部导入目录，避免误删外部文件）
-                    val file = java.io.File(audio.filePath)
-                    val internalDir = getApplication<Application>().getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC)
+                    val file = File(audio.filePath)
+                    val internalDir = getApplication<Application>().getExternalFilesDir(Environment.DIRECTORY_MUSIC)
                     if (internalDir != null && audio.filePath.startsWith(internalDir.absolutePath) && file.exists()) {
                         file.delete()
                     }
@@ -769,7 +765,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     emitToast("未检测到清晰人声语音")
                 }
             } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) {
+                if (e is CancellationException) {
                     emitToast("识别任务已停止")
                 } else {
                     emitToast("语音识别失败")
@@ -814,7 +810,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun clearAllExports() {
         viewModelScope.launch(Dispatchers.IO) {
-            val outputDir = getApplication<android.app.Application>().getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC)
+            val outputDir = getApplication<Application>().getExternalFilesDir(Environment.DIRECTORY_MUSIC)
             var count = 0
             outputDir?.listFiles()?.forEach { 
                 if (it.isFile) {
@@ -849,21 +845,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         var endMs = -1L
         var snippet = ""
 
-        for (paragraph in transcript.paragraphs) {
-            for (sentence in paragraph.sentences) {
-                for (word in sentence.words) {
+        for ((_, sentences) in transcript.paragraphs) {
+            for ((_, _, _, _, words) in sentences) {
+                for ((_, word1, startMs1, endMs1) in words) {
                     val wordStart = currentIdx
-                    val wordEnd = currentIdx + word.word.length
+                    val wordEnd = currentIdx + word1.length
 
                     if (start < wordEnd && end > wordStart) {
-                        if (startMs == -1L || word.startMs < startMs) {
-                            startMs = word.startMs
+                        if (startMs == -1L || startMs1 < startMs) {
+                            startMs = startMs1
                         }
-                        if (endMs == -1L || word.endMs > endMs) {
-                            endMs = word.endMs
+                        if (endMs == -1L || endMs1 > endMs) {
+                            endMs = endMs1
                         }
                         if (snippet.length < 30) {
-                            snippet += word.word
+                            snippet += word1
                         }
                     }
 
@@ -894,7 +890,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             endMs = resolved.second,
             colorIndex = _segments.value.size % 5
         )
-        _segments.value = _segments.value + newSegment
+        _segments.value += newSegment
         emitToast("已生成剪辑片段")
         // 生成后清除选区
         _selectedTextRange.value = null
@@ -917,7 +913,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             endMs = resolved.second,
             colorIndex = _trimRanges.value.size % 5
         )
-        _trimRanges.value = _trimRanges.value + newTrim
+        _trimRanges.value += newTrim
         emitToast("已添加裁剪卡片，可前往【裁剪】页处理")
         // 生成后清除选区
         _selectedTextRange.value = null
@@ -944,7 +940,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             endMs = endMs,
             colorIndex = _trimRanges.value.size % 5
         )
-        _trimRanges.value = _trimRanges.value + newTrim
+        _trimRanges.value += newTrim
         emitToast("已在当前位置创建裁剪卡片")
     }
 
@@ -1015,7 +1011,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         previewJob?.cancel()
         previewJob = viewModelScope.launch {
-            delay(100) // 等待状态同步
+            delay(100.milliseconds) // 等待状态同步
             while (isActive && _previewingSegmentId.value == trim.id) {
                 val currentTrim = _trimRanges.value.find { it.id == trim.id }
                 if (currentTrim == null) {
@@ -1036,7 +1032,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _previewingSegmentId.value = null
                     break
                 }
-                delay(20)
+                delay(20.milliseconds)
             }
         }
     }
@@ -1054,12 +1050,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         // 合并重叠的裁剪区间
         val merged = mutableListOf<Pair<Long, Long>>()
-        for (cut in cuts) {
+        for ((_, _, _, startMs, endMs) in cuts) {
             val last = merged.lastOrNull()
-            if (last != null && cut.startMs <= last.second) {
-                merged[merged.size - 1] = last.first to maxOf(last.second, cut.endMs)
+            if (last != null && startMs <= last.second) {
+                merged[merged.size - 1] = last.first to maxOf(last.second, endMs)
             } else {
-                merged.add(cut.startMs to cut.endMs)
+                merged.add(startMs to endMs)
             }
         }
 
@@ -1097,7 +1093,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         // 已生成过预览则直接切换播放状态
         val currentPreview = _trimPreviewResult.value
-        if (currentPreview != null && currentPreview.isSuccess && java.io.File(currentPreview.outputPath).exists()) {
+        if (currentPreview != null && currentPreview.isSuccess && File(currentPreview.outputPath).exists()) {
             mergedPreviewPlayer.togglePlayPause()
             return
         }
@@ -1117,13 +1113,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _isGeneratingTrimPreview.value = false
             _trimPreviewResult.value = result
 
-            if (result.isSuccess && java.io.File(result.outputPath).exists()) {
+            if (result.isSuccess && File(result.outputPath).exists()) {
                 val previewItem = AudioItem(
                     id = 999999L,
                     title = "裁剪预览: ${audio.title}",
                     artist = audio.artist,
                     durationMs = result.durationMs,
-                    sizeBytes = java.io.File(result.outputPath).length(),
+                    sizeBytes = File(result.outputPath).length(),
                     filePath = result.outputPath,
                     dateModifiedSec = System.currentTimeMillis() / 1000
                 )
@@ -1144,7 +1140,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 根据原文件扩展名推断导出格式（保证覆盖后格式不变）
      */
     private fun resolveSourceFormat(audio: AudioItem): ExportAudioFormat {
-        return when (java.io.File(audio.filePath).extension.lowercase()) {
+        return when (File(audio.filePath).extension.lowercase()) {
             "mp3" -> ExportAudioFormat.MP3
             "wav" -> ExportAudioFormat.WAV
             else -> ExportAudioFormat.M4A
@@ -1214,7 +1210,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         // 预览已生成且文件存在时直接复用（裁剪区间变动时预览缓存已自动失效）
         val currentPreview = _trimPreviewResult.value
-        if (currentPreview != null && currentPreview.isSuccess && java.io.File(currentPreview.outputPath).exists()) {
+        if (currentPreview != null && currentPreview.isSuccess && File(currentPreview.outputPath).exists()) {
             shareAudioFile(currentPreview.outputPath)
             return
         }
@@ -1230,7 +1226,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _trimExportProgress.value = 0f
             try {
                 val result = performTrimExport(audio, keepSegments, "Trim_${System.currentTimeMillis()}", resolveSourceFormat(audio))
-                if (result.isSuccess && java.io.File(result.outputPath).exists()) {
+                if (result.isSuccess && File(result.outputPath).exists()) {
                     shareAudioFile(result.outputPath)
                 } else {
                     emitToast("导出失败: ${result.errorMessage}")
@@ -1274,8 +1270,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                val sourceFile = java.io.File(audio.filePath)
-                val newFile = java.io.File(result.outputPath)
+                val sourceFile = File(audio.filePath)
+                val newFile = File(result.outputPath)
                 if (!sourceFile.exists() || !sourceFile.isFile) {
                     emitToast("原文件不可直接覆盖，请使用【另存为】")
                     return@launch
@@ -1297,19 +1293,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun shareAudioFile(filePath: String) {
         try {
-            val context = getApplication<android.app.Application>()
-            val file = java.io.File(filePath)
+            val context = getApplication<Application>()
+            val file = File(filePath)
             if (!file.exists()) return
-            val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "audio/*"
-                putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(
-                android.content.Intent.createChooser(shareIntent, "分享裁剪音频").apply {
+                Intent.createChooser(shareIntent, "分享裁剪音频").apply {
                     // ViewModel 持有的是 Application Context，非 Activity 环境启动需要 NEW_TASK 标志
-                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
            )
         } catch (e: Exception) {
@@ -1425,7 +1421,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         previewJob?.cancel()
         previewJob = viewModelScope.launch {
-            delay(100) // 等待状态同步
+            delay(100.milliseconds) // 等待状态同步
             while (isActive && _previewingSegmentId.value == segment.id) {
                 val currentSeg = _segments.value.find { it.id == segment.id }
                 if (currentSeg == null) {
@@ -1447,7 +1443,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _previewingSegmentId.value = null
                     break
                 }
-                delay(20) // 高频检查
+                delay(20.milliseconds) // 高频检查
             }
         }
     }
@@ -1473,7 +1469,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             endMs = endMs,
             colorIndex = _segments.value.size % 5
         )
-        _segments.value = _segments.value + newSegment
+        _segments.value += newSegment
         emitToast("已在当前位置创建片段")
     }
     fun updateSegmentRange(segmentId: String, newStartMs: Long, newEndMs: Long) {
@@ -1541,7 +1537,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val currentPreview = _mergedPreviewResult.value
         // 只有当预览结果存在、成功且文件确实存在时，才切换播放状态
-        if (currentPreview != null && currentPreview.isSuccess && java.io.File(currentPreview.outputPath).exists()) {
+        if (currentPreview != null && currentPreview.isSuccess && File(currentPreview.outputPath).exists()) {
             mergedPreviewPlayer.togglePlayPause()
             return
         }
@@ -1555,13 +1551,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _isGeneratingMergedPreview.value = false
             _mergedPreviewResult.value = result
 
-            if (result.isSuccess && java.io.File(result.outputPath).exists()) {
+            if (result.isSuccess && File(result.outputPath).exists()) {
                 val previewItem = AudioItem(
                     id = 888888L,
                     title = "预览: ${audio.title}",
                     artist = audio.artist,
                     durationMs = result.durationMs,
-                    sizeBytes = java.io.File(result.outputPath).length(),
+                    sizeBytes = File(result.outputPath).length(),
                     filePath = result.outputPath,
                     dateModifiedSec = System.currentTimeMillis() / 1000
                 )
@@ -1580,16 +1576,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val preview = _mergedPreviewResult.value ?: return
         if (!preview.isSuccess) return
         
-        val sourceFile = java.io.File(preview.outputPath)
+        val sourceFile = File(preview.outputPath)
         if (!sourceFile.exists()) return
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val outputDir = getApplication<android.app.Application>().getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC)
-                    ?: android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC)
+                val outputDir = getApplication<Application>().getExternalFilesDir(Environment.DIRECTORY_MUSIC)
+                    ?: Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
                 
                 val fileName = customName?.ifBlank { null } ?: "Clip_${System.currentTimeMillis()}"
-                val targetFile = java.io.File(outputDir, "${fileName}.${sourceFile.extension}")
+                val targetFile = File(outputDir, "${fileName}.${sourceFile.extension}")
                 
                 sourceFile.copyTo(targetFile, overwrite = true)
                 
@@ -1732,7 +1728,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val inputFileSize = File(inputFile).length()
                 conversionPollJob = viewModelScope.launch(Dispatchers.IO) {
                     while (isActive && !convertCancelled) {
-                        delay(300)
+                        delay(300.milliseconds)
                         if (!convertCancelled) {
                             updateConversionProgress(outputFile, inputFileSize, quality, convertStartTime)
                         }

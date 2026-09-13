@@ -1,8 +1,6 @@
 package com.example.mp3player.asr
-
-import org.junit.Assert.assertNotNull
 import org.junit.Test
-import java.util.Random
+import java.util.*
 
 class WaveformExtractorTest {
 

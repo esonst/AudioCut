@@ -2,14 +2,11 @@ package com.example.mp3player.ui.components
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -21,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -31,17 +29,13 @@ import com.example.mp3player.data.model.AudioSegment
 import com.example.mp3player.ffmpeg.ExportAudioFormat
 import com.example.mp3player.ffmpeg.ExportResult
 import com.example.mp3player.ui.theme.*
-import java.io.File
-import kotlin.math.max
-import kotlin.math.roundToLong
-
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
-import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
+import kotlin.math.max
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 长按连续步进手势 Modifier
@@ -59,10 +53,10 @@ fun Modifier.continuousPress(
                     awaitFirstDown(requireUnconsumed = false)
                     val job = launch {
                         currentOnStep()
-                        delay(initialDelayMs)
+                        delay(initialDelayMs.milliseconds)
                         while (isActive) {
                             currentOnStep()
-                            delay(repeatIntervalMs)
+                            delay(repeatIntervalMs.milliseconds)
                         }
                     }
                     waitForUpOrCancellation()

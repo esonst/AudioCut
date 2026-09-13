@@ -1,7 +1,5 @@
 package com.example.mp3player.ui.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -20,15 +18,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalTextToolbar
-import androidx.compose.ui.platform.TextToolbar
-import androidx.compose.ui.platform.TextToolbarStatus
+import androidx.compose.ui.platform.*
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
@@ -41,6 +34,7 @@ import com.example.mp3player.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 高性能文稿视图 (v3.1 - 修复选择飘移、拖动期间隐藏悬浮菜单避免干扰手势)
@@ -127,7 +121,7 @@ fun OptimizedTranscriptView(
             .collectLatest {
                 isAdjustingSelection = true
                 onSelectionDragChanged(true)
-                delay(300)
+                delay(300.milliseconds)
                 isAdjustingSelection = false
                 onSelectionDragChanged(false)
             }
@@ -211,13 +205,13 @@ fun OptimizedTranscriptView(
                                             val position = layout.getOffsetForPosition(offset)
                                             
                                             var currentIdx = 0
-                                            outer@for (paragraph in transcriptResult.paragraphs) {
-                                                for (sentence in paragraph.sentences) {
-                                                    for (word in sentence.words) {
+                                            outer@for ((_, sentences) in transcriptResult.paragraphs) {
+                                                for ((_, _, _, _, words) in sentences) {
+                                                    for ((_, word1, startMs) in words) {
                                                         val start = currentIdx
-                                                        val end = currentIdx + word.word.length
+                                                        val end = currentIdx + word1.length
                                                         if (position in start until end) {
-                                                            onWordClick(word.startMs)
+                                                            onWordClick(startMs)
                                                             break@outer
                                                         }
                                                         currentIdx = end
@@ -318,9 +312,9 @@ private fun MenuItem(
 private fun findWordRange(wordId: Long?, transcriptResult: TranscriptResult): TextRange? {
     if (wordId == null) return null
     var currentIdx = 0
-    for (paragraph in transcriptResult.paragraphs) {
-        for (sentence in paragraph.sentences) {
-            for (word in sentence.words) {
+    for ((_, sentences) in transcriptResult.paragraphs) {
+        for ((_, _, _, _, words) in sentences) {
+            for (word in words) {
                 val start = currentIdx
                 val end = currentIdx + word.word.length
                 if (word.id == wordId) {

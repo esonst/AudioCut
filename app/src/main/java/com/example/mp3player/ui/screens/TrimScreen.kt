@@ -34,6 +34,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 裁剪页面（风格与操作与【剪辑】保持一致，主题色为淡红色）
@@ -433,7 +434,7 @@ private fun TrimEditorHeaderCard(
         AlertDialog(
             onDismissRequest = { showOverwriteConfirm = false },
             title = { Text("覆盖原文件") },
-            text = { Text("确认将原音频中已选的 ${selectedCount} 段剪掉并覆盖原文件？此操作不可撤销。", fontSize = 14.sp) },
+            text = { Text("确认将原音频中已选的 $selectedCount 段剪掉并覆盖原文件？此操作不可撤销。", fontSize = 14.sp) },
             confirmButton = {
                 Button(
                     onClick = { onOverwriteOriginal(); showOverwriteConfirm = false },
@@ -660,12 +661,12 @@ private fun Modifier.continuousPress(
             while (true) {
                 awaitPointerEventScope {
                     awaitFirstDown(requireUnconsumed = false)
-                    val job = launch {
+                    val job = this@coroutineScope.launch {
                         currentOnStep()
-                        delay(initialDelayMs)
+                        delay(initialDelayMs.milliseconds)
                         while (isActive) {
                             currentOnStep()
-                            delay(repeatIntervalMs)
+                            delay(repeatIntervalMs.milliseconds)
                         }
                     }
                     waitForUpOrCancellation()

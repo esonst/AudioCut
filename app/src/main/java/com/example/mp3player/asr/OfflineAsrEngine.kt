@@ -1,7 +1,6 @@
 package com.example.mp3player.asr
 
 import android.content.Context
-import android.content.res.AssetManager
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
@@ -12,7 +11,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteOrder
-import kotlin.math.max
 
 /**
  * 本地离线 ASR 语音识别引擎 (性能优化版)

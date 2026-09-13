@@ -7,7 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,15 +23,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mp3player.data.model.AudioItem
-import com.example.mp3player.ui.components.*
+import com.example.mp3player.ui.components.FloatingPlayerBar
+import com.example.mp3player.ui.components.OptimizedTranscriptView
 import com.example.mp3player.ui.theme.*
 import com.example.mp3player.viewmodel.AppScreen
 import com.example.mp3player.viewmodel.MainViewModel
-import androidx.compose.ui.tooling.preview.Preview
-import com.example.mp3player.data.model.AudioSegment
-import com.example.mp3player.data.model.TranscriptResult
-import com.example.mp3player.data.model.TranscriptWord
-
 
 /**
  * 文稿与音频剪辑页面

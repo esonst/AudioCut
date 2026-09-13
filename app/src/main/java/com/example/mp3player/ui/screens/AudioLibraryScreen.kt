@@ -5,8 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.provider.DocumentsContract
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -22,34 +21,29 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.mp3player.data.model.*
+import androidx.core.content.FileProvider
+import com.example.mp3player.data.model.AudioItem
+import com.example.mp3player.data.model.BrowseMode
 import com.example.mp3player.ui.components.FilterSortBottomSheet
-import com.example.mp3player.ui.components.ScanImportDialog
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import com.example.mp3player.ui.components.FloatingPlayerBar
+import com.example.mp3player.ui.components.ScanImportDialog
 import com.example.mp3player.ui.components.drawVerticalScrollbar
 import com.example.mp3player.ui.theme.*
 import com.example.mp3player.utils.RingtoneHelper
-import androidx.core.content.FileProvider
 import com.example.mp3player.viewmodel.AppScreen
 import com.example.mp3player.viewmodel.MainViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import kotlinx.coroutines.delay
-import androidx.compose.ui.tooling.preview.Preview
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 音频库页面：自动扫描、全部/文件夹模式、筛选排序、权限处理
@@ -536,9 +530,9 @@ private fun AudioItemRowOptimized(
         if (isHighlighted) {
             repeat(3) {
                 flashOn = true
-                delay(250)
+                delay(250.milliseconds)
                 flashOn = false
-                delay(250)
+                delay(250.milliseconds)
             }
         }
     }

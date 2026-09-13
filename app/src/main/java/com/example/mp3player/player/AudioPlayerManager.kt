@@ -1,21 +1,15 @@
 package com.example.mp3player.player
 
 import android.content.Context
-import androidx.media3.common.AudioAttributes
-import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.PlaybackParameters
-import androidx.media3.common.Player
+import androidx.media3.common.*
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.session.MediaSession
 import com.example.mp3player.data.model.AudioItem
 import com.example.mp3player.data.model.LoopMode
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlin.random.Random
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 基于 ExoPlayer 的本地音频播放管理器
@@ -145,7 +139,7 @@ class AudioPlayerManager(
                     // 避免轮询循环因瞬时异常静默退出，导致进度流永远不再更新
                 }
                 // 播放中高频刷新进度；暂停/空闲时降低轮询频率，减少空转功耗
-                delay(if (exoPlayer?.isPlaying == true) 30L else 300L)
+                delay((if (exoPlayer?.isPlaying == true) 30L else 300L).milliseconds)
             }
         }
     }
@@ -179,11 +173,7 @@ class AudioPlayerManager(
             // 同步播放列表到 ExoPlayer 以支持系统级 上一曲/下一曲
             exoPlayer?.let { player ->
                 val mediaItems = newPlaylist.map { item ->
-                    val uri = if (item.contentUri != null) {
-                        item.contentUri
-                    } else {
-                        android.net.Uri.fromFile(java.io.File(item.filePath))
-                    }
+                    val uri = item.contentUri ?: android.net.Uri.fromFile(java.io.File(item.filePath))
                     MediaItem.Builder()
                         .setMediaId(item.id.toString())
                         .setUri(uri)
@@ -215,7 +205,7 @@ class AudioPlayerManager(
 //        }
 
         _currentAudio.value = audio
-        val uri = if (audio.contentUri != null) audio.contentUri else android.net.Uri.fromFile(java.io.File(audio.filePath))
+        val uri = audio.contentUri ?: android.net.Uri.fromFile(java.io.File(audio.filePath))
         val mediaItem = MediaItem.Builder()
             .setMediaId(audio.id.toString())
             .setUri(uri)
