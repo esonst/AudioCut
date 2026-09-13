@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 项目未使用 values/colors.xml 中的颜色，主题颜色统一在 ui/theme/Color.kt 中定义 -->
+</resources>

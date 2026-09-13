@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+        android:width="108dp"
+        android:height="108dp"
+        android:viewportWidth="108"
+        android:viewportHeight="108">
+
+    <!--音频频谱波形 蓝到紫渐变柱子，无播放按钮，左右预留安全边距 -->
+    <group
+            android:pivotX="54"
+            android:pivotY="54"
+            android:scaleX="0.8">
+        <!-- 左侧小柱 -->
+        <path android:fillColor="#4285f4" android:pathData="M18 52 L20 52 L20 56 L18 56 Z"/>
+        <path android:fillColor="#4a8cf6" android:pathData="M24 48 L27 48 L27 60 L24 60 Z"/>
+        <path android:fillColor="#5092f7" android:pathData="M30 44 L34 44 L34 64 L30 64 Z"/>
+        <path android:fillColor="#4084f3" android:pathData="M36 38 L41 38 L41 70 L36 70 Z"/>
+        <path android:fillColor="#b4d2fa" android:pathData="M43 42 L46 42 L46 66 L43 66 Z"/>
+        <!--中间高柱 -->
+        <path android:fillColor="#5496f8" android:pathData="M48 32 L53 32 L53 76 L48 76 Z"/>
+        <path android:fillColor="#637cf0" android:pathData="M55 26 L60 26 L60 82 L55 82 Z"/>
+        <!--右侧柱子，蓝转紫 -->
+        <path android:fillColor="#738ff2" android:pathData="M62 36 L66 36 L66 72 L62 72 Z"/>
+        <path android:fillColor="#7c68e8" android:pathData="M68 40 L73 40 L73 68 L68 68 Z"/>
+        <path android:fillColor="#8057e3" android:pathData="M76 43 L80 43 L80 65 L76 65 Z"/>
+        <path android:fillColor="#8652df" android:pathData="M82 47 L85 47 L85 61 L82 61 Z"/>
+        <path android:fillColor="#8b4fdb" android:pathData="M88 51 L90 51 L90 57 L88 57 Z"/>
+    </group>
+
+
+</vector>
