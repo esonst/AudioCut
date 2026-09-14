@@ -23,13 +23,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mp3player.data.model.AudioItem
+import com.example.mp3player.navigation.AppScreen
 import com.example.mp3player.ui.components.FloatingPlayerBar
 import com.example.mp3player.ui.components.OptimizedTranscriptView
 import com.example.mp3player.ui.theme.*
-import com.example.mp3player.navigation.AppScreen
+import com.example.mp3player.viewmodel.ClipViewModel
 import com.example.mp3player.viewmodel.MainViewModel
 import com.example.mp3player.viewmodel.TranscriptViewModel
-import com.example.mp3player.viewmodel.ClipViewModel
 
 /**
  * 文稿与音频剪辑页面
@@ -222,9 +222,9 @@ fun TranscriptScreen(
                                 }
                             }
 
-                            item {
-                                Spacer(modifier = Modifier.height(16.dp).fillMaxWidth().clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)).background(Color.White))
-                            }
+//                            item {
+//                                Spacer(modifier = Modifier.height(16.dp).fillMaxWidth().clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp)).background(Color.White))
+//                            }
                         }
                     }
                 }
@@ -244,7 +244,7 @@ fun TranscriptScreen(
                 onPlayNext = { mainViewModel.playMainNext() },
                 onSeekTo = { mainViewModel.mainSeekTo(it) },
                 onClickBar = { mainViewModel.navigateTo(AppScreen.TRANSCRIPT) },
-                modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 16.dp, vertical = 80.dp)
+                modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
     }

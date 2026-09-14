@@ -135,20 +135,20 @@ fun MainScreen(
             }
 
             // 浮动播放栏
-            FloatingPlayerBar(
-                currentAudio = currentAudio,
-                isPlaying = isPlaying,
-                currentPositionMs = currentPositionMs,
-                durationMs = durationMs,
-                onTogglePlayPause = { mainViewModel.toggleMainPlayPause() },
-                onFastForward5s = { mainViewModel.mainFastForwardOrRewind(5) },
-                onRewind5s = { mainViewModel.mainFastForwardOrRewind(-5) },
-                onPlayPrevious = { mainViewModel.playMainPrevious() },
-                onPlayNext = { mainViewModel.playMainNext() },
-                onClickBar = { mainViewModel.navigateTo(AppScreen.TRANSCRIPT) },
-                onSeekTo = { mainViewModel.mainSeekTo(it) },
-                modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter)
-            )
+//            FloatingPlayerBar(
+//                currentAudio = currentAudio,
+//                isPlaying = isPlaying,
+//                currentPositionMs = currentPositionMs,
+//                durationMs = durationMs,
+//                onTogglePlayPause = { mainViewModel.toggleMainPlayPause() },
+//                onFastForward5s = { mainViewModel.mainFastForwardOrRewind(5) },
+//                onRewind5s = { mainViewModel.mainFastForwardOrRewind(-5) },
+//                onPlayPrevious = { mainViewModel.playMainPrevious() },
+//                onPlayNext = { mainViewModel.playMainNext() },
+//                onClickBar = { mainViewModel.navigateTo(AppScreen.TRANSCRIPT) },
+//                onSeekTo = { mainViewModel.mainSeekTo(it) },
+//                modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter)
+//            )
         }
     }
 }

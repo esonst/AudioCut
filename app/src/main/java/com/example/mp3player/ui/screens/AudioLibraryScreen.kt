@@ -32,13 +32,13 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.example.mp3player.data.model.AudioItem
 import com.example.mp3player.data.model.BrowseMode
+import com.example.mp3player.navigation.AppScreen
 import com.example.mp3player.ui.components.FilterSortBottomSheet
 import com.example.mp3player.ui.components.FloatingPlayerBar
 import com.example.mp3player.ui.components.ScanImportDialog
 import com.example.mp3player.ui.components.drawVerticalScrollbar
 import com.example.mp3player.ui.theme.*
 import com.example.mp3player.utils.RingtoneHelper
-import com.example.mp3player.navigation.AppScreen
 import com.example.mp3player.viewmodel.AudioLibraryViewModel
 import com.example.mp3player.viewmodel.MainViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
@@ -446,7 +446,6 @@ fun AudioLibraryScreen(mainViewModel: MainViewModel, viewModel: AudioLibraryView
             onClickBar = { mainViewModel.navigateTo(AppScreen.TRANSCRIPT) },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(horizontal = 16.dp, vertical = 80.dp)
         )
     }
 
@@ -1156,7 +1155,6 @@ private fun AudioLibraryPreviewWrapper(
             onClickBar = {},
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(horizontal = 16.dp, vertical = 80.dp)
         )
     }
 }

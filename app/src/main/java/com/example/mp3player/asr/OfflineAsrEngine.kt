@@ -123,15 +123,26 @@ class OfflineAsrEngine(private val context: Context) {
 
                     if (tok.isBlank() || isSpecialTag(tok)) continue
 
-                    val start = (segmentBaseTimeMs + (timestamps[i] * 1000L).toLong())
+                    var start = (segmentBaseTimeMs + (timestamps[i] * 1000L).toLong())
                         .coerceIn(0L, totalDurationMs)
                     val dur = if (durations.getOrNull(i) ?: 0f > 0.01f) durations[i] else 0.2f
                     val end = (start + (dur * 1000L).toLong())
                         .coerceIn(start + 50L, totalDurationMs)
 
                     // 过滤超出当前切片范围的内容
-                    if (sliceStartMs > 0 && end <= sliceStartMs) continue
-                    if (sliceEndMs < totalDurationMs && start >= sliceEndMs) continue
+                    if (sliceStartMs > 0) {
+                        if (end <= sliceStartMs) {
+                            // 完全落在前置冗余区，直接丢弃
+                            continue
+                        }
+                        // 词语跨sliceStart边界，把start裁剪到sliceStartMs，消除冗余区时间
+                        if (start < sliceStartMs) {
+                            start = sliceStartMs
+                        }
+                    }
+                    if (sliceEndMs < totalDurationMs && start >= sliceEndMs) {
+                        continue
+                    }
 
                     // 兼容模型输出的标点：合并到上一个词语末尾
                     if (isPunctuationToken(tok)) {
@@ -668,7 +679,8 @@ class OfflineAsrEngine(private val context: Context) {
         val endSec = endMs / 1000.0
         val outputPcmFile = File(context.cacheDir, "asr_pcm_${System.currentTimeMillis()}.pcm")
 
-        val command = "-ss $startSec -to $endSec -i \"${inputFile.absolutePath}\" " +
+        val command = "-i \"${inputFile.absolutePath}\" " +
+                "-ss $startSec -to $endSec " +
                 "-ar 16000 -ac 1 -f s16le -acodec pcm_s16le \"${outputPcmFile.absolutePath}\""
 
         return@withContext runCatching {
