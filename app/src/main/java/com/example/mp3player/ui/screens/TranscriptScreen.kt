@@ -189,14 +189,14 @@ fun TranscriptScreen(
                     }
 
                     // 处理日志（分块/VAD/识别/智能分句）
-                    if (asrLog.isNotEmpty()) {
-                        item {
-                            AsrLogCard(
-                                logs = asrLog,
-                                modifier = Modifier.padding(bottom = 14.dp)
-                            )
-                        }
-                    }
+//                    if (asrLog.isNotEmpty()) {
+//                        item {
+//                            AsrLogCard(
+//                                logs = asrLog,
+//                                modifier = Modifier.padding(bottom = 14.dp)
+//                            )
+//                        }
+//                    }
 
                     // 文稿渲染（按段落拆分 item）
                     transcriptResult?.let { result ->
