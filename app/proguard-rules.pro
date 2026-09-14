@@ -9,3 +9,7 @@
 
 # Data Models
 -keep class com.example.mp3player.data.model.** { *; }
+
+
+# Commons-Compress（模型 tar.bz2 解压）
+-keep class org.apache.commons.compress.** { *; }

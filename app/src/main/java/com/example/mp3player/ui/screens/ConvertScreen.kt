@@ -39,6 +39,7 @@ fun ConvertScreen(mainViewModel: MainViewModel, convertViewModel: ConvertViewMod
     val durationMs by mainViewModel.durationMs.collectAsState()
     val convertState by convertViewModel.convertState.collectAsState()
     val convertInputFile by convertViewModel.convertInputFile.collectAsState()
+    val isVideoInput by convertViewModel.isVideoInput.collectAsState()
 
     var selectedQuality by remember { mutableStateOf(ConvertQuality.HIGH) }
     var showInputFileSelection by remember { mutableStateOf(false) }
@@ -52,6 +53,13 @@ fun ConvertScreen(mainViewModel: MainViewModel, convertViewModel: ConvertViewMod
         if (convertState.isConverting) progressCardDismissed = false
     }
 
+    // 输入不是视频时自动切回高质量（复制音频选项仅对视频输入显示）
+    LaunchedEffect(isVideoInput) {
+        if (!isVideoInput && selectedQuality == ConvertQuality.EXTRACT) {
+            selectedQuality = ConvertQuality.HIGH
+        }
+    }
+
     // 默认输出文件名：前缀 "converted" + 原文件名
     val defaultOutputName = when {
         convertInputFile != null -> "converted_${java.io.File(convertInputFile!!).nameWithoutExtension}"
@@ -59,6 +67,9 @@ fun ConvertScreen(mainViewModel: MainViewModel, convertViewModel: ConvertViewMod
         else -> null
     }
     val effectiveOutputName = outputFileName ?: defaultOutputName
+
+    // 输出扩展名：复制音频固定 m4a（-c:a copy 直拷原音频流），其余转 mp3
+    val outputExtension = if (selectedQuality == ConvertQuality.EXTRACT) "m4a" else "mp3"
 
     Column(
         modifier = modifier
@@ -255,7 +266,7 @@ fun ConvertScreen(mainViewModel: MainViewModel, convertViewModel: ConvertViewMod
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = effectiveOutputName?.let { "$it.mp3" } ?: "请先选择输入文件",
+                    text = effectiveOutputName?.let { "$it.$outputExtension" } ?: "请先选择输入文件",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = if (effectiveOutputName != null) PrimaryDark else TextMuted,
@@ -270,9 +281,9 @@ fun ConvertScreen(mainViewModel: MainViewModel, convertViewModel: ConvertViewMod
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // 输出质量（紧凑单行选择，去掉外层大卡片节省纵向空间）
+        // 输出选项（紧凑单行选择，去掉外层大卡片节省纵向空间）
         Text(
-            text = "输出质量",
+            text = "输出选项",
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             color = TextSecondary,
@@ -301,6 +312,19 @@ fun ConvertScreen(mainViewModel: MainViewModel, convertViewModel: ConvertViewMod
                 selected = selectedQuality == ConvertQuality.LOW,
                 onClick = { selectedQuality = ConvertQuality.LOW },
                 modifier = Modifier.weight(1f)
+            )
+        }
+
+        // 输入为视频时，额外提供【复制音频】：-c:a copy 直接复制原音频流为 m4a，不重新编码，速度最快
+        if (isVideoInput) {
+            Spacer(modifier = Modifier.height(6.dp))
+            QualityChip(
+                label = "复制音频",
+                bitrate = "直接复制 · 最快",
+                icon = Icons.Default.ContentCopy,
+                selected = selectedQuality == ConvertQuality.EXTRACT,
+                onClick = { selectedQuality = ConvertQuality.EXTRACT },
+                modifier = Modifier.fillMaxWidth()
             )
         }
 
@@ -445,7 +469,7 @@ fun ConvertScreen(mainViewModel: MainViewModel, convertViewModel: ConvertViewMod
                 OutlinedTextField(
                     value = editedName,
                     onValueChange = { editedName = it },
-                    suffix = { Text(".mp3", fontSize = 14.sp, color = TextSecondary) },
+                    suffix = { Text(".$outputExtension", fontSize = 14.sp, color = TextSecondary) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )

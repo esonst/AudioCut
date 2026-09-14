@@ -43,19 +43,19 @@ class AsrManager(
      * @param audio 目标音频
      * @param startOffsetMs 起始偏移（断点续传）
      * @param existingWords 已有词语（断点续传）
-     * @param useVad 是否启用 VAD
-     * @param chunkTargetMs 分片目标时长
+     * @param config 流水线配置（分块 / VAD / 智能分句）
      * @param onPartialResult 分片结果回调
      * @param onProgress 进度回调 (0f ~ 1f)
+     * @param onLog 处理日志回调（分块/VAD/识别/智能分句各阶段）
      */
     suspend fun transcribeAudio(
         audio: AudioItem,
         startOffsetMs: Long = 0L,
         existingWords: List<com.example.mp3player.data.model.TranscriptWord> = emptyList(),
-        useVad: Boolean = true,
-        chunkTargetMs: Long = 30_000L,
+        config: AsrConfig = AsrConfig(),
         onPartialResult: (TranscriptResult) -> Unit,
-        onProgress: (Float) -> Unit
+        onProgress: (Float) -> Unit,
+        onLog: (String) -> Unit = {}
     ): TranscriptResult {
         _isRecognizing.value = true
         return try {
@@ -63,10 +63,10 @@ class AsrManager(
                 audio = audio,
                 startOffsetMs = startOffsetMs,
                 existingWords = existingWords,
-                useVad = useVad,
-                chunkTargetMs = chunkTargetMs,
+                config = config,
                 onPartialResult = onPartialResult,
-                onProgress = onProgress
+                onProgress = onProgress,
+                onLog = onLog
             )
         } finally {
             _isRecognizing.value = false

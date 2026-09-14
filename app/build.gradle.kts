@@ -95,6 +95,9 @@ dependencies {
     // FFmpegKit
     implementation(libs.ffmpeg.kit.full)
 
+    // 模型压缩包解压（tar.bz2 / tar.gz）
+    implementation(libs.commons.compress)
+
 
     testImplementation(libs.androidx.core)
     testImplementation(libs.androidx.junit)

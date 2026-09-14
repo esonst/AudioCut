@@ -1,4 +1,4 @@
-﻿package com.example.mp3player.ui.screens
+package com.example.mp3player.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -19,19 +19,37 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.mp3player.ui.components.ModelInstallDialogHost
 import com.example.mp3player.ui.theme.*
 import com.example.mp3player.viewmodel.MainViewModel
 import com.example.mp3player.viewmodel.SettingsViewModel
 
 /**
- * 设置界面：管理 ASR 切片、VAD (恒开) 及其他超参数
+ * 设置界面：文稿转写设置卡片（文稿转写 / 智能分句 / 分块 / VAD）+ 数据管理 + 关于
  */
 @Composable
 fun SettingsScreen(mainViewModel: MainViewModel, settingsViewModel: SettingsViewModel, onBack: () -> Unit, modifier: Modifier = Modifier) {
-    val asrChunkSeconds by settingsViewModel.asrChunkSeconds.collectAsState()
+    val enableDocTranscript by settingsViewModel.enableDocTranscript.collectAsState()
+    val enableSmartPunct by settingsViewModel.enableSmartPunct.collectAsState()
     val enableSlicing by settingsViewModel.enableSlicing.collectAsState()
+    val asrChunkSeconds by settingsViewModel.asrChunkSeconds.collectAsState()
+    val enableVad by settingsViewModel.enableVad.collectAsState()
+    val vadThreshold by settingsViewModel.vadThreshold.collectAsState()
+    val vadMinSilence by settingsViewModel.vadMinSilence.collectAsState()
+    val vadMinSpeech by settingsViewModel.vadMinSpeech.collectAsState()
+    val vadMaxSpeech by settingsViewModel.vadMaxSpeech.collectAsState()
+    val modelInstallState by settingsViewModel.modelInstallState.collectAsState()
 
     var chunkInput by remember(asrChunkSeconds) { mutableStateOf(asrChunkSeconds.toString()) }
+    var vadThresholdInput by remember(vadThreshold) { mutableStateOf(vadThreshold.toString()) }
+    var vadMinSilenceInput by remember(vadMinSilence) { mutableStateOf(vadMinSilence.toString()) }
+    var vadMinSpeechInput by remember(vadMinSpeech) { mutableStateOf(vadMinSpeech.toString()) }
+    var vadMaxSpeechInput by remember(vadMaxSpeech) { mutableStateOf(vadMaxSpeech.toString()) }
+
+    // 文稿转写默认开启但模型缺失时，进入设置页主动提示下载/导入（本会话只提示一次）
+    LaunchedEffect(Unit) {
+        settingsViewModel.verifyDocTranscriptModel()
+    }
 
     Column(
         modifier = modifier
@@ -66,7 +84,31 @@ fun SettingsScreen(mainViewModel: MainViewModel, settingsViewModel: SettingsView
                 .verticalScroll(rememberScrollState())
                 .padding(start = 16.dp, end = 16.dp, bottom = 110.dp) // 预留底部导航栏高度，避免内容被遮挡
         ) {
-            SettingsSection(title = "语音识别 (ASR) 配置") {
+            // ==================== 文稿转写设置卡片 ====================
+            SettingsSection(title = "文稿转写设置") {
+                SettingsSwitchItem(
+                    icon = Icons.Default.Description,
+                    title = "开启文稿转写",
+                    subtitle = "需安装 SenseVoice 识别模型；未安装时提示下载或导入",
+                    checked = enableDocTranscript,
+                    onCheckedChange = {
+                        settingsViewModel.onToggleDocTranscript(it)
+                    }
+                )
+
+                SettingsSwitchItem(
+                    icon = Icons.Default.AutoAwesome,
+                    title = "智能分句",
+                    subtitle = "使用 punct-ct 模型自动添加标点并分句；关闭则按停顿机械分句",
+                    checked = enableSmartPunct,
+                    onCheckedChange = {
+                        settingsViewModel.onToggleSmartPunct(it)
+                    }
+                )
+
+                HorizontalDivider(color = SurfaceVariantLight.copy(alpha = 0.6f))
+
+                // ----- 分块设置 -----
                 SettingsSwitchItem(
                     icon = Icons.Default.VerticalSplit,
                     title = "启用分片处理",
@@ -76,7 +118,7 @@ fun SettingsScreen(mainViewModel: MainViewModel, settingsViewModel: SettingsView
                         settingsViewModel.setEnableSlicing(it)
                     }
                 )
-                
+
                 if (enableSlicing) {
                     SettingsInputItem(
                         icon = Icons.Default.Timer,
@@ -85,22 +127,81 @@ fun SettingsScreen(mainViewModel: MainViewModel, settingsViewModel: SettingsView
                         value = chunkInput,
                         onValueChange = { input ->
                             chunkInput = input.filter { it.isDigit() }
-                            chunkInput.toIntOrNull()?.let { 
+                            chunkInput.toIntOrNull()?.let {
                                 if (it > 0) settingsViewModel.setAsrChunkSeconds(it)
                             }
                         }
                     )
                 }
 
-                SettingsInfoItem(
-                    icon = Icons.Default.RecordVoiceOver,
+                HorizontalDivider(color = SurfaceVariantLight.copy(alpha = 0.6f))
+
+                // ----- VAD 设置 -----
+                SettingsSwitchItem(
+                    icon = Icons.Default.Mic,
                     title = "VAD 语音检测",
-                    value = "始终开启"
+                    subtitle = "检测人声片段并跳过静音，提升识别准确率",
+                    checked = enableVad,
+                    onCheckedChange = {
+                        settingsViewModel.setEnableVad(it)
+                    }
                 )
+
+                if (enableVad) {
+                    SettingsInputItem(
+                        icon = Icons.Default.Tune,
+                        title = "VAD 检测阈值",
+                        subtitle = "0.05 - 0.95，越高越严格",
+                        value = vadThresholdInput,
+                        keyboardType = KeyboardType.Decimal,
+                        onValueChange = { input ->
+                            val filtered = input.filter { it.isDigit() || it == '.' }
+                            vadThresholdInput = filtered
+                            filtered.toFloatOrNull()?.let { settingsViewModel.setVadThreshold(it) }
+                        }
+                    )
+                    SettingsInputItem(
+                        icon = Icons.Default.Schedule,
+                        title = "最短静音 (秒)",
+                        subtitle = "静音超过该值才切分 (0.05 - 5)",
+                        value = vadMinSilenceInput,
+                        keyboardType = KeyboardType.Decimal,
+                        onValueChange = { input ->
+                            val filtered = input.filter { it.isDigit() || it == '.' }
+                            vadMinSilenceInput = filtered
+                            filtered.toFloatOrNull()?.let { settingsViewModel.setVadMinSilence(it) }
+                        }
+                    )
+                    SettingsInputItem(
+                        icon = Icons.Default.Schedule,
+                        title = "最短语音 (秒)",
+                        subtitle = "短于该值的人声视为噪音 (0.05 - 5)",
+                        value = vadMinSpeechInput,
+                        keyboardType = KeyboardType.Decimal,
+                        onValueChange = { input ->
+                            val filtered = input.filter { it.isDigit() || it == '.' }
+                            vadMinSpeechInput = filtered
+                            filtered.toFloatOrNull()?.let { settingsViewModel.setVadMinSpeech(it) }
+                        }
+                    )
+                    SettingsInputItem(
+                        icon = Icons.Default.Schedule,
+                        title = "最长语音 (秒)",
+                        subtitle = "单段语音上限 (1 - 120)",
+                        value = vadMaxSpeechInput,
+                        keyboardType = KeyboardType.Decimal,
+                        onValueChange = { input ->
+                            val filtered = input.filter { it.isDigit() || it == '.' }
+                            vadMaxSpeechInput = filtered
+                            filtered.toFloatOrNull()?.let { settingsViewModel.setVadMaxSpeech(it) }
+                        }
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // ==================== 数据管理 ====================
             SettingsSection(title = "数据管理") {
                 SettingsActionItem(
                     icon = Icons.Default.DeleteSweep,
@@ -124,6 +225,7 @@ fun SettingsScreen(mainViewModel: MainViewModel, settingsViewModel: SettingsView
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // ==================== 性能与关于 ====================
             SettingsSection(title = "性能与关于") {
                 SettingsInfoItem(
                     icon = Icons.Default.Speed,
@@ -140,6 +242,14 @@ fun SettingsScreen(mainViewModel: MainViewModel, settingsViewModel: SettingsView
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
+
+    // 模型下载/导入对话框（缺失提示 / 进度 / 失败卡片）
+    ModelInstallDialogHost(
+        state = modelInstallState,
+        onDownload = { settingsViewModel.downloadPromptedModel() },
+        onImport = { uri -> settingsViewModel.importPromptedModel(uri) },
+        onDismiss = { settingsViewModel.dismissModelDialog() }
+    )
 }
 
 @Composable
@@ -171,7 +281,8 @@ fun SettingsInputItem(
     title: String,
     subtitle: String,
     value: String,
-    onValueChange: (String) -> Unit
+    onValueChange: (String) -> Unit,
+    keyboardType: KeyboardType = KeyboardType.Number
 ) {
     Row(
         modifier = Modifier
@@ -188,9 +299,9 @@ fun SettingsInputItem(
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
-            modifier = Modifier.width(80.dp),
+            modifier = Modifier.width(90.dp),
             singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = PrimaryLight,
                 unfocusedBorderColor = SurfaceVariantLight

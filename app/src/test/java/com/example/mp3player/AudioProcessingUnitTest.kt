@@ -137,22 +137,22 @@ class AudioProcessingUnitTest {
     }
     @Test
     fun testAppScreenAndPlayerTabIndices() {
-        assertEquals(0, com.example.mp3player.viewmodel.AppScreen.AUDIO_LIBRARY.pageIndex)
-        assertEquals(1, com.example.mp3player.viewmodel.AppScreen.TRANSCRIPT.pageIndex)
-        assertEquals(2, com.example.mp3player.viewmodel.AppScreen.CLIP.pageIndex)
-        assertEquals(3, com.example.mp3player.viewmodel.AppScreen.TRIM.pageIndex)
-        assertEquals(4, com.example.mp3player.viewmodel.AppScreen.CONVERT.pageIndex)
-        assertEquals(5, com.example.mp3player.viewmodel.AppScreen.SETTINGS.pageIndex)
+        assertEquals(0, com.example.mp3player.navigation.AppScreen.AUDIO_LIBRARY.pageIndex)
+        assertEquals(1, com.example.mp3player.navigation.AppScreen.TRANSCRIPT.pageIndex)
+        assertEquals(2, com.example.mp3player.navigation.AppScreen.CLIP.pageIndex)
+        assertEquals(3, com.example.mp3player.navigation.AppScreen.TRIM.pageIndex)
+        assertEquals(4, com.example.mp3player.navigation.AppScreen.CONVERT.pageIndex)
+        assertEquals(5, com.example.mp3player.navigation.AppScreen.SETTINGS.pageIndex)
 
-        assertEquals(com.example.mp3player.viewmodel.AppScreen.AUDIO_LIBRARY, com.example.mp3player.viewmodel.AppScreen.fromIndex(0))
-        assertEquals(com.example.mp3player.viewmodel.AppScreen.TRANSCRIPT, com.example.mp3player.viewmodel.AppScreen.fromIndex(1))
-        assertEquals(com.example.mp3player.viewmodel.AppScreen.CLIP, com.example.mp3player.viewmodel.AppScreen.fromIndex(2))
-        assertEquals(com.example.mp3player.viewmodel.AppScreen.TRIM, com.example.mp3player.viewmodel.AppScreen.fromIndex(3))
-        assertEquals(com.example.mp3player.viewmodel.AppScreen.CONVERT, com.example.mp3player.viewmodel.AppScreen.fromIndex(4))
-        assertEquals(com.example.mp3player.viewmodel.AppScreen.SETTINGS, com.example.mp3player.viewmodel.AppScreen.fromIndex(5))
+        assertEquals(com.example.mp3player.navigation.AppScreen.AUDIO_LIBRARY, com.example.mp3player.navigation.AppScreen.fromIndex(0))
+        assertEquals(com.example.mp3player.navigation.AppScreen.TRANSCRIPT, com.example.mp3player.navigation.AppScreen.fromIndex(1))
+        assertEquals(com.example.mp3player.navigation.AppScreen.CLIP, com.example.mp3player.navigation.AppScreen.fromIndex(2))
+        assertEquals(com.example.mp3player.navigation.AppScreen.TRIM, com.example.mp3player.navigation.AppScreen.fromIndex(3))
+        assertEquals(com.example.mp3player.navigation.AppScreen.CONVERT, com.example.mp3player.navigation.AppScreen.fromIndex(4))
+        assertEquals(com.example.mp3player.navigation.AppScreen.SETTINGS, com.example.mp3player.navigation.AppScreen.fromIndex(5))
 
-        assertEquals(com.example.mp3player.viewmodel.PlayerTab.TRANSCRIPT, com.example.mp3player.viewmodel.PlayerTab.fromIndex(1))
-        assertEquals(com.example.mp3player.viewmodel.PlayerTab.CLIP, com.example.mp3player.viewmodel.PlayerTab.fromIndex(2))
+        assertEquals(com.example.mp3player.navigation.PlayerTab.TRANSCRIPT, com.example.mp3player.navigation.PlayerTab.fromIndex(1))
+        assertEquals(com.example.mp3player.navigation.PlayerTab.CLIP, com.example.mp3player.navigation.PlayerTab.fromIndex(2))
     }
 
 

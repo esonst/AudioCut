@@ -5,9 +5,9 @@ import android.content.SharedPreferences
 import android.net.Uri
 import androidx.core.content.edit
 import com.example.mp3player.data.model.*
-import java.io.File
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 /**
  * 应用偏好与状态持久化仓库
@@ -39,6 +39,9 @@ class PreferencesRepository(context: Context) {
         private const val KEY_VAD_MAX_SPEECH_SEC = "key_vad_max_speech_sec"
         private const val KEY_ASR_THREADS = "key_asr_threads"
         private const val KEY_ASR_LANGUAGE = "key_asr_language"
+        private const val KEY_ENABLE_DOC_TRANSCRIPT = "key_enable_doc_transcript"
+        private const val KEY_ENABLE_SMART_PUNCT = "key_enable_smart_punct"
+        private const val KEY_ENABLE_VAD = "key_enable_vad"
         private const val KEY_DEFAULT_EXPORT_FORMAT = "key_default_export_format"
         private const val KEY_IMPORTED_AUDIO_URIS = "key_imported_audio_uris"
         private const val KEY_LIBRARY_CACHE = "key_library_cache"
@@ -475,6 +478,16 @@ class PreferencesRepository(context: Context) {
 
     fun getAsrLanguage(): String = prefs.getString(KEY_ASR_LANGUAGE, "") ?: ""
     fun saveAsrLanguage(lang: String) = prefs.edit { putString(KEY_ASR_LANGUAGE, lang) }
+
+    // 8.5 文稿转写与智能分句开关
+    fun getEnableDocTranscript(): Boolean = prefs.getBoolean(KEY_ENABLE_DOC_TRANSCRIPT, false)
+    fun saveEnableDocTranscript(enabled: Boolean) = prefs.edit { putBoolean(KEY_ENABLE_DOC_TRANSCRIPT, enabled) }
+
+    fun getEnableSmartPunct(): Boolean = prefs.getBoolean(KEY_ENABLE_SMART_PUNCT, false)
+    fun saveEnableSmartPunct(enabled: Boolean) = prefs.edit { putBoolean(KEY_ENABLE_SMART_PUNCT, enabled) }
+
+    fun getEnableVad(): Boolean = prefs.getBoolean(KEY_ENABLE_VAD, true)
+    fun saveEnableVad(enabled: Boolean) = prefs.edit { putBoolean(KEY_ENABLE_VAD, enabled) }
 
     fun getDefaultExportFormat(): String = prefs.getString(KEY_DEFAULT_EXPORT_FORMAT, "M4A") ?: "M4A"
     fun saveDefaultExportFormat(formatName: String) = prefs.edit { putString(KEY_DEFAULT_EXPORT_FORMAT, formatName) }

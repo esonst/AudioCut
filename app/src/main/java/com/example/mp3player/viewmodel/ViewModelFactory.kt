@@ -24,7 +24,7 @@ class ViewModelFactory(
                 AudioLibraryViewModel(application, container.eventBus, container.audioRepository, container.prefs, container.playerManager) as T
 
             modelClass.isAssignableFrom(TranscriptViewModel::class.java) ->
-                TranscriptViewModel(application, container.eventBus, container.asrManager, container.prefs, container.playerManager) as T
+                TranscriptViewModel(application, container.eventBus, container.asrManager, container.prefs, container.playerManager, container.modelManager) as T
 
             modelClass.isAssignableFrom(ClipViewModel::class.java) ->
                 ClipViewModel(application, container.eventBus, container.audioCutter, container.prefs, container.playerManager) as T
@@ -36,7 +36,7 @@ class ViewModelFactory(
                 ConvertViewModel(application, container.eventBus, container.playerManager) as T
 
             modelClass.isAssignableFrom(SettingsViewModel::class.java) ->
-                SettingsViewModel(application, container.eventBus, container.prefs, container.asrManager) as T
+                SettingsViewModel(application, container.eventBus, container.prefs, container.asrManager, container.modelManager) as T
 
             else -> throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
         }

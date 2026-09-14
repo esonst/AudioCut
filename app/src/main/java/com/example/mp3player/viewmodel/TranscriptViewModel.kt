@@ -1,8 +1,12 @@
 package com.example.mp3player.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.viewModelScope
+import com.example.mp3player.asr.AsrConfig
 import com.example.mp3player.asr.AsrManager
+import com.example.mp3player.asr.ModelInstallCoordinator
+import com.example.mp3player.asr.ModelManager
 import com.example.mp3player.core.AppEventBus
 import com.example.mp3player.data.model.AudioSegment
 import com.example.mp3player.data.model.TranscriptResult
@@ -28,7 +32,8 @@ class TranscriptViewModel(
     eventBus: AppEventBus,
     private val asrManager: AsrManager,
     private val prefs: PreferencesRepository,
-    private val playerManager: AudioPlayerManager
+    private val playerManager: AudioPlayerManager,
+    private val modelManager: ModelManager
 ) : BaseViewModel(application, eventBus) {
 
     // ==================== 播放器状态（透传） ====================
@@ -66,6 +71,21 @@ class TranscriptViewModel(
     private val _asrChunkSeconds = MutableStateFlow(prefs.getAsrChunkSeconds())
     val asrChunkSeconds: StateFlow<Int> = _asrChunkSeconds.asStateFlow()
 
+    // ==================== 处理日志（分块/VAD/识别/智能分句） ====================
+    private val _asrLog = MutableStateFlow<List<String>>(emptyList())
+    val asrLog: StateFlow<List<String>> = _asrLog.asStateFlow()
+
+    /** 追加一条处理日志；与上一条相同则跳过（避免分片循环重复），最多保留 200 条 */
+    private fun appendLog(line: String) {
+        val current = _asrLog.value
+        if (current.isNotEmpty() && current.last() == line) return
+        _asrLog.value = (current + line).takeLast(200)
+    }
+
+    // ==================== 模型安装状态（文稿页提示下载/导入） ====================
+    private val coordinator = ModelInstallCoordinator(modelManager)
+    val modelInstallState: StateFlow<ModelInstallCoordinator.UiState> = coordinator.state
+
     init {
         // 切换音频时自动加载缓存文稿
         viewModelScope.launch {
@@ -90,6 +110,52 @@ class TranscriptViewModel(
         prefs.saveAsrChunkSeconds(seconds)
     }
 
+    // ==================== 模型下载 / 导入（从文稿页提示发起） ====================
+    /** 下载缺失的模型（带进度条），完成后自动开始识别 */
+    fun downloadPromptedModel() {
+        val type = modelInstallState.value.type ?: return
+        viewModelScope.launch {
+            val ok = coordinator.download()
+            if (ok) {
+                emitToast("模型下载并安装完成，开始识别")
+                launchAsr(currentPlayingAudio.value ?: return@launch, true)
+            } else {
+                emitToast("模型下载失败，可手动下载后导入")
+            }
+        }
+    }
+
+    /** 导入本地模型压缩包（.tar.bz2），完成后自动开始识别 */
+    fun importPromptedModel(uri: Uri) {
+        val type = modelInstallState.value.type ?: return
+        viewModelScope.launch {
+            val ok = coordinator.import(uri)
+            if (ok) {
+                emitToast("模型导入完成，开始识别")
+                launchAsr(currentPlayingAudio.value ?: return@launch, true)
+            } else {
+                emitToast("模型导入失败，请选择 .tar.bz2 压缩包")
+            }
+        }
+    }
+
+    fun dismissModelDialog() = coordinator.dismiss()
+
+    /** 从偏好构建流水线配置 */
+    private fun buildAsrConfig(totalMs: Long): AsrConfig {
+        return AsrConfig(
+            useVad = prefs.getEnableVad(),
+            vadThreshold = prefs.getVadThreshold(),
+            vadMinSilence = prefs.getVadMinSilence(),
+            vadMinSpeech = prefs.getVadMinSpeech(),
+            vadMaxSpeech = prefs.getVadMaxSpeech(),
+            useSlicing = _enableSlicing.value,
+            chunkSeconds = _asrChunkSeconds.value,
+            useSmartPunctuation = prefs.getEnableSmartPunct(),
+            asrThreads = prefs.getAsrThreads()
+        )
+    }
+
     /** 开始语音识别（支持断点续传） */
     fun startAsrRecognition(resumeIfPossible: Boolean = true) {
         val current = currentPlayingAudio.value ?: run {
@@ -101,18 +167,39 @@ class TranscriptViewModel(
             return
         }
 
+        // 文稿转写开启：先检查 SenseVoice 模型，缺失则提示下载/导入
+        if (prefs.getEnableDocTranscript()) {
+            viewModelScope.launch {
+                val ready = coordinator.checkOrPrompt(ModelManager.ModelType.SENSE_VOICE)
+                if (ready) {
+                    launchAsr(current, resumeIfPossible)
+                }
+            }
+        } else {
+            // 文稿转写关闭：跳过预处理，直接下一步
+            if (!modelManager.isSenseVoiceReady()) {
+                emitToast("未安装识别模型，请到设置中开启文稿转写并下载模型")
+                return
+            }
+            launchAsr(current, resumeIfPossible)
+        }
+    }
+
+    private fun launchAsr(current: com.example.mp3player.data.model.AudioItem, resumeIfPossible: Boolean) {
+        if (asrJob?.isActive == true) return
         asrJob = viewModelScope.launch {
             try {
                 _isAsrLoading.value = true
-                val currentChunkSec = _asrChunkSeconds.value
-                val isSlicing = _enableSlicing.value
+                _asrLog.value = emptyList() // 新一轮识别清空日志
+                val totalMs = maxOf(1L, current.durationMs)
+                val config = buildAsrConfig(totalMs)
+                val isSlicing = config.useSlicing
+                val chunkTargetMs = if (isSlicing) config.chunkTargetMs else totalMs
                 val cached = _transcriptResult.value ?: prefs.getCachedTranscript(current.id)
                 val canResume = resumeIfPossible && cached != null && !cached.isCompleted && cached.processedDurationMs > 0L
                 val startOffsetMs = if (canResume) cached!!.processedDurationMs else 0L
                 val existingWords = if (canResume) cached!!.words else emptyList()
-                val totalMs = maxOf(1L, current.durationMs)
 
-                val chunkTargetMs = if (isSlicing) currentChunkSec * 1000L else totalMs
                 val totalChunks = if (isSlicing) (totalMs / chunkTargetMs + 1).toInt() else 1
 
                 if (canResume) {
@@ -128,20 +215,26 @@ class TranscriptViewModel(
                     audio = current,
                     startOffsetMs = startOffsetMs,
                     existingWords = existingWords,
-                    useVad = true,
-                    chunkTargetMs = chunkTargetMs,
+                    config = config,
                     onPartialResult = { partial ->
                         _transcriptResult.value = partial
                         prefs.saveCachedTranscript(current.id, partial)
                         val processedMs = partial.processedDurationMs
                         _asrProgressText.value = "[${processedMs / chunkTargetMs}/$totalChunks]"
                     },
-                    onProgress = { _asrProgress.value = it }
+                    onProgress = { _asrProgress.value = it },
+                    onLog = { appendLog(it) }
                 )
 
                 _transcriptResult.value = result
                 prefs.saveCachedTranscript(current.id, result)
-                emitToast(if (result.words.isNotEmpty()) "本地语音识别完成" else "未检测到清晰人声语音")
+                emitToast(
+                    when {
+                        result.words.isNotEmpty() -> "本地语音识别完成"
+                        result.fullText.isNotBlank() -> result.fullText
+                        else -> "未检测到清晰人声语音"
+                    }
+                )
             } catch (e: Exception) {
                 emitToast(if (e is CancellationException) "识别任务已停止" else "语音识别失败")
             } finally {

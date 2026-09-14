@@ -2,6 +2,7 @@ package com.example.mp3player.di
 
 import android.app.Application
 import com.example.mp3player.asr.AsrManager
+import com.example.mp3player.asr.ModelManager
 import com.example.mp3player.core.AppEventBus
 import com.example.mp3player.data.repository.AudioRepository
 import com.example.mp3player.data.repository.PreferencesRepository
@@ -20,4 +21,5 @@ class AppContainer(application: Application) {
     val playerManager: AudioPlayerManager by lazy { AudioPlayerManager(application) }
     val audioCutter: AudioCutterConcatenator by lazy { AudioCutterConcatenator(application) }
     val asrManager: AsrManager by lazy { AsrManager(application) }
+    val modelManager: ModelManager by lazy { ModelManager(application) }
 }

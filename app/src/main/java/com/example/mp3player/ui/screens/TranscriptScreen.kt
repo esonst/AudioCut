@@ -4,10 +4,12 @@ package com.example.mp3player.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FormatQuote
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import com.example.mp3player.data.model.AudioItem
 import com.example.mp3player.navigation.AppScreen
 import com.example.mp3player.ui.components.FloatingPlayerBar
+import com.example.mp3player.ui.components.ModelInstallDialogHost
 import com.example.mp3player.ui.components.OptimizedTranscriptView
 import com.example.mp3player.ui.theme.*
 import com.example.mp3player.viewmodel.ClipViewModel
@@ -55,6 +58,8 @@ fun TranscriptScreen(
     val segments by clipViewModel.segments.collectAsState()
     val asrProgressText by transcriptViewModel.asrProgressText.collectAsState()
     val asrChunkSeconds by transcriptViewModel.asrChunkSeconds.collectAsState()
+    val asrLog by transcriptViewModel.asrLog.collectAsState()
+    val modelInstallState by transcriptViewModel.modelInstallState.collectAsState()
 
     // 文本选择拖动期间隐藏浮动播放卡片
     var isDraggingSelection by remember { mutableStateOf(false) }
@@ -183,6 +188,16 @@ fun TranscriptScreen(
                         )
                     }
 
+                    // 处理日志（分块/VAD/识别/智能分句）
+                    if (asrLog.isNotEmpty()) {
+                        item {
+                            AsrLogCard(
+                                logs = asrLog,
+                                modifier = Modifier.padding(bottom = 14.dp)
+                            )
+                        }
+                    }
+
                     // 文稿渲染（按段落拆分 item）
                     transcriptResult?.let { result ->
                         if (result.words.isNotEmpty()) {
@@ -248,6 +263,14 @@ fun TranscriptScreen(
             )
         }
     }
+
+    // 模型下载/导入对话框（开始识别时模型缺失 → 提示下载或导入）
+    ModelInstallDialogHost(
+        state = modelInstallState,
+        onDownload = { transcriptViewModel.downloadPromptedModel() },
+        onImport = { uri -> transcriptViewModel.importPromptedModel(uri) },
+        onDismiss = { transcriptViewModel.dismissModelDialog() }
+    )
 }
 
 @Composable fun AsrControlCard(
@@ -285,6 +308,50 @@ fun TranscriptScreen(
     }
 }
 
+
+@Composable
+fun AsrLogCard(
+    logs: List<String>,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = null,
+                    tint = PrimaryLight,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "处理日志",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = PrimaryDark
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            // 固定高度可滚动日志区（嵌套在外层 LazyColumn 中）
+            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 150.dp)) {
+                items(logs) { log ->
+                    Text(
+                        text = log,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                        color = TextMuted,
+                        modifier = Modifier.padding(vertical = 1.dp)
+                    )
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun TranscriptHeaderView(

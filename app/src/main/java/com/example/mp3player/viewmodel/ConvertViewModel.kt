@@ -43,6 +43,13 @@ class ConvertViewModel(
     private val _convertState = MutableStateFlow(ConvertState())
     val convertState: StateFlow<ConvertState> = _convertState.asStateFlow()
 
+    private val _isVideoInput = MutableStateFlow(false)
+    /** 当前输入文件是否为视频（为 true 时界面显示"复制音频"选项） */
+    val isVideoInput: StateFlow<Boolean> = _isVideoInput.asStateFlow()
+
+    @Volatile
+    private var lastProbedPath: String? = null
+
     @Volatile
     private var convertSessionId: Long = -1L
     @Volatile
@@ -56,12 +63,59 @@ class ConvertViewModel(
         viewModelScope.launch {
             eventBus.navigateToConvert.collect { event ->
                 _convertInputFile.value = event.inputFile
+                probeInputMedia(effectiveInputPath())
+            }
+        }
+
+        // 未显式指定输入文件时，跟随当前播放的音频/视频探测输入类型
+        viewModelScope.launch {
+            currentPlayingAudio.collect { audio ->
+                if (convertInputFile.value == null) {
+                    probeInputMedia(audio?.filePath)
+                }
             }
         }
     }
 
     fun setConvertInputFile(path: String?) {
         _convertInputFile.value = path
+        probeInputMedia(effectiveInputPath())
+    }
+
+    /** 当前生效的输入文件路径：优先显式指定，否则回退到当前播放 */
+    private fun effectiveInputPath(): String? =
+        convertInputFile.value ?: currentPlayingAudio.value?.filePath
+
+    /** 探测当前输入是否为视频（ffprobe 判断视频流，失败时按扩展名兜底） */
+    private fun probeInputMedia(path: String?) {
+        if (path == null) {
+            lastProbedPath = null
+            _isVideoInput.value = false
+            return
+        }
+        if (path == lastProbedPath) return
+        lastProbedPath = path
+        viewModelScope.launch(Dispatchers.IO) {
+            _isVideoInput.value = isVideoFile(path)
+        }
+    }
+
+    private fun isVideoFile(path: String): Boolean {
+        val extFallback = path.substringAfterLast('.', "").lowercase() in VIDEO_EXTENSIONS
+        return try {
+            val streams = FFprobeKit.getMediaInformation(path).mediaInformation?.streams.orEmpty()
+            if (streams.isNotEmpty()) streams.any { it.type == "video" } else extFallback
+        } catch (_: Exception) {
+            extFallback
+        }
+    }
+
+    companion object {
+        /** 常见视频扩展名（ffprobe 探测失败时的兜底） */
+        private val VIDEO_EXTENSIONS = setOf(
+            "mp4", "m4v", "mkv", "avi", "webm", "3gp", "mov", "ts",
+            "flv", "wmv", "mpg", "mpeg", "rmvb", "m2ts", "vob"
+        )
     }
 
     /** 开始格式转换 */
@@ -82,7 +136,9 @@ class ConvertViewModel(
         val baseName = (customFileName?.trim()?.takeIf { it.isNotEmpty() }
             ?: "converted_${File(inputFile).nameWithoutExtension}")
             .replace(Regex("[\\\\/:*?\"<>|]"), "_")
-        val outputFile = "${outputDir?.absolutePath}/$baseName.mp3"
+        // 复制音频固定输出 m4a（-c:a copy 直拷原音频流），其余转 mp3
+        val outputExt = if (quality == ConvertQuality.EXTRACT) "m4a" else "mp3"
+        val outputFile = "${outputDir?.absolutePath}/$baseName.$outputExt"
 
         viewModelScope.launch(Dispatchers.Main) {
             _convertState.value = ConvertState(
@@ -198,7 +254,12 @@ class ConvertViewModel(
             val outputSize = File(outputFile).takeIf { it.exists() }?.length() ?: 0L
             val elapsed = System.currentTimeMillis() - startTime
 
-            val ratio = if (quality == ConvertQuality.HIGH) 0.5f else 0.15f
+            val ratio = when (quality) {
+                ConvertQuality.HIGH -> 0.5f
+                ConvertQuality.LOW -> 0.15f
+                // 复制音频：输出仅含音频流，约为原视频体积的一小部分
+                ConvertQuality.EXTRACT -> 0.1f
+            }
             val expectedSize = (inputSize * ratio).toLong().coerceAtLeast(1L)
             val progress = (outputSize.toFloat() / expectedSize).coerceIn(0f, 0.95f)
             val speed = if (elapsed > 0) outputSize.toFloat() / (elapsed / 1000f) else 0f
@@ -235,8 +296,15 @@ class ConvertViewModel(
 
     /** 构建 FFmpeg 命令 */
     private fun buildFFmpegCommand(input: String, output: String, quality: ConvertQuality): String {
-        val q = if (quality == ConvertQuality.LOW) 7 else 2
-        return "-hide_banner -stats -i \"$input\" -vn -c:a libmp3lame -q:a $q -ar 44100 -ac 2 \"$output\""
+        return when (quality) {
+            // 复制音频：-c:a copy 直接复制原音频流（不重新编码），速度最快
+            ConvertQuality.EXTRACT ->
+                "-hide_banner -stats -i \"$input\" -vn -c:a copy \"$output\""
+            else -> {
+                val q = if (quality == ConvertQuality.LOW) 7 else 2
+                "-hide_banner -stats -i \"$input\" -vn -c:a libmp3lame -q:a $q -ar 44100 -ac 2 \"$output\""
+            }
+        }
     }
 
     fun getConvertedFile(): File? = _convertState.value.outputFilePath?.let { File(it) }
@@ -249,7 +317,7 @@ class ConvertViewModel(
         }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "audio/mpeg"
+            type = if (file.extension.equals("m4a", ignoreCase = true)) "audio/mp4" else "audio/mpeg"
             putExtra(Intent.EXTRA_STREAM, uri)
             flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
         }
