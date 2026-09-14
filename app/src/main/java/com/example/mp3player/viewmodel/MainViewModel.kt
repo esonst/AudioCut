@@ -10,7 +10,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.arthenica.ffmpegkit.*
 import com.example.mp3player.asr.OfflineAsrEngine
-import com.example.mp3player.asr.WaveformExtractor
 import com.example.mp3player.data.model.*
 import com.example.mp3player.data.repository.AudioRepository
 import com.example.mp3player.ffmpeg.AudioCutterConcatenator
@@ -70,7 +69,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val audioRepository = AudioRepository(application)
     val playerManager = AudioPlayerManager(application)
     private val asrEngine = OfflineAsrEngine(application)
-    private val waveformExtractor = WaveformExtractor(application)
     private val audioCutter = AudioCutterConcatenator(application)
     private val prefs = com.example.mp3player.data.repository.PreferencesRepository(application)
 
@@ -257,9 +255,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 波形数据
     private val _waveformPoints = MutableStateFlow<List<Float>>(emptyList())
     val waveformPoints: StateFlow<List<Float>> = _waveformPoints.asStateFlow()
-
-    private val _isExtractingWaveform = MutableStateFlow(false)
-    val isExtractingWaveform: StateFlow<Boolean> = _isExtractingWaveform.asStateFlow()
 
     // 导出状态
     private val _isExporting = MutableStateFlow(false)
@@ -683,18 +678,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _selectedWordIds.value = emptySet()
         _segments.value = prefs.getSegmentsForAudio(audio.id)
         _trimRanges.value = prefs.getTrimRangesForAudio(audio.id)
-
-        // 提取音频波形数据
-        viewModelScope.launch {
-            try {
-                _isExtractingWaveform.value = true
-                val points = waveformExtractor.extractWaveform(audio.filePath, audio.contentUri, 300)
-                _waveformPoints.value = points
-            } catch (e: Exception) {
-            } finally {
-                _isExtractingWaveform.value = false
-            }
-        }
     }
 
     /**
