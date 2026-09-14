@@ -1,182 +1,344 @@
 package com.example.mp3player.asr
 
 import android.content.Context
-import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.ReturnCode
 import com.example.mp3player.data.model.*
 import com.k2fsa.sherpa.onnx.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
+
+
 /**
- * 本地离线 ASR 语音识别引擎 (性能优化版)
- * - 实现模型单例化，避免重复加载 226MB 模型带来的内存波动与延迟
- * - 优化 PCM 解码，使用 ShortArray 替换 ArrayList<Short> 减少装箱开销
- * - 智能分句与段落排版
+ * 本地离线ASR语音识别引擎（SenseVoice中文模型 + FFmpeg解码）
+ *
+ * 核心特性：
+ * - SenseVoice中文模型原生自带标点，不再手动生成标点
+ * - 分句策略：模型结束标点优先 + 词语时间间隔兜底
+ * - 音频解码统一使用FFmpegKit，兼容全格式
+ * - 模型与VAD全局单例，避免重复加载
+ * - 分块识别 + VAD语音分段 + 增量结果回调
  */
 class OfflineAsrEngine(private val context: Context) {
 
     private val modelDirName = "model_offline"
 
     companion object {
+        // ========== 配置常量 ==========
+        /** 句内短停顿：超过该值加逗号（毫秒） */
+        private const val COMMA_GAP_MS = 250L
+        /** 句末长停顿：超过该值加句号并断句（毫秒） */
+        private const val PERIOD_GAP_MS = 800L
+        /** 句子内累计多少字强制加逗号（句内停顿兜底） */
+        private const val COMMA_CHAR_LIMIT = 50
+        /** 单句最大字符数，强制句号断句（长句兜底） */
+        private const val SENTENCE_MAX_CHAR = 100
+        /** 段落累计最大字符数，遇到句号则分段 */
+        private const val PARAGRAPH_MAX_LENGTH = 150
+        /** 分片识别默认块大小（毫秒） */
+        private const val DEFAULT_CHUNK_MS = 30_000L
+        /** 分片前后冗余时长，避免截断词语（毫秒） */
+        private const val CHUNK_REDUNDANCY_MS = 2_000L
+
+        // ========== 标点集合（仅识别模型原生输出，不主动生成） ==========
+        /** 句子结束标点 */
+        private val endPunctuationSet = setOf('。', '！', '？', '!', '?', '…')
+        /** 全部中文标点 */
+        private val allPunctuationSet = setOf(
+            '，', '。', '！', '？', '；', '：', '、',
+            ',', '.', '!', '?', ';', ':', '…',
+            '“', '”', '‘', '’'
+        )
+
+        // ========== 单例缓存 ==========
+        @Volatile
         private var cachedRecognizer: OfflineRecognizer? = null
+        @Volatile
         private var cachedVad: Vad? = null
         private val lock = Any()
 
-        val punctuationSet = setOf('，', '。', '！', '？', '；', '：', '、', ',', '.', '!', '?', ';', ':', '…', '“', '”', '‘', '’')
-        val endPunctuation = setOf("。", "！", "？", "!", "?", "；", ";", "…")
-        val clausePunctuation = setOf("，", ",", "、", "：", ":")
-
         /**
-         * 显式释放 ASR 占用的重度内存资源 (模型与 VAD)
+         * 显式释放ASR占用的重度内存资源（模型与VAD）
          */
         fun releaseResources() {
             synchronized(lock) {
-                try {
-                    cachedVad?.release()
-                    cachedVad = null
-                    cachedRecognizer?.release()
-                    cachedRecognizer = null
-                } catch (e: Exception) {
-                }
+                runCatching { cachedVad?.release() }
+                cachedVad = null
+                runCatching { cachedRecognizer?.release() }
+                cachedRecognizer = null
             }
         }
 
-        fun isPunctuationToken(token: String): Boolean {
-            return token.isNotBlank() && token.all { it in punctuationSet }
-        }
-
-        fun isSpecialTag(token: String): Boolean {
+        // ========== 工具函数 ==========
+        private fun isSpecialTag(token: String): Boolean {
             val t = token.trim()
             return t.startsWith("<") || t.startsWith("[") || t.startsWith("#")
         }
 
-        fun parseTextToWords(text: String): List<String> {
-            val words = mutableListOf<String>()
-            val currentWord = StringBuilder()
-            fun flush() { if (currentWord.isNotEmpty()) { words.add(currentWord.toString()); currentWord.setLength(0) } }
-            for (ch in text) {
-                if (ch.isWhitespace()) flush()
-                else if (ch in punctuationSet) {
-                    if (currentWord.isNotEmpty()) { currentWord.append(ch); flush() }
-                    else if (words.isNotEmpty()) { words[words.size - 1] = words.last() + ch }
-                } else if (ch.code in 0x4E00..0x9FFF) { flush(); currentWord.append(ch) }
-                else currentWord.append(ch)
-            }
-            flush()
-            return words
+        private fun isPunctuationToken(token: String): Boolean {
+            val t = token.trim()
+            return t.isNotBlank() && t.all { it in allPunctuationSet } && !isSpecialTag(t)
         }
 
+        /**
+         * 处理SenseVoice识别结果，将token与时间戳对齐
+         * 标点token会合并到前一个词语末尾，不单独成词
+         */
+        /**
+         * 处理SenseVoice识别结果，将token与时间戳对齐
+         * 模型输出的标点token会合并到前一个词语末尾，不单独成词
+         */
         fun processSenseVoiceResult(
-            text: String, tokens: Array<String>, timestamps: FloatArray, durations: FloatArray,
-            segmentBaseTimeMs: Long = 0L, sliceStartMs: Long = 0L, sliceEndMs: Long = Long.MAX_VALUE, totalDurationMs: Long = Long.MAX_VALUE
+            text: String,
+            tokens: Array<String>,
+            timestamps: FloatArray,
+            durations: FloatArray,
+            segmentBaseTimeMs: Long = 0L,
+            sliceStartMs: Long = 0L,
+            sliceEndMs: Long = Long.MAX_VALUE,
+            totalDurationMs: Long = Long.MAX_VALUE
         ): List<TranscriptWord>? {
             val words = mutableListOf<TranscriptWord>()
             var wordId = 0L
 
+            // 优先使用token+时间戳精确对齐
             if (tokens.isNotEmpty() && timestamps.isNotEmpty() && tokens.size == timestamps.size) {
                 for (i in tokens.indices) {
-                    var tok = tokens[i].replace("@@", "").replace("\u2581", " ").replace("\u2585", " ")
-                    if (tok.any { it.code in 0x4E00..0x9FFF }) tok = tok.replace(" ", "")
+                    var tok = tokens[i]
+                        .replace("@@", "")
+                        .replace("\u2581", " ")
+                        .replace("\u2585", " ")
+
+                    // 中文token内去除多余空格
+                    if (tok.any { it.code in 0x4E00..0x9FFF }) {
+                        tok = tok.replace(" ", "")
+                    }
+
                     if (tok.isBlank() || isSpecialTag(tok)) continue
 
-                    val start = (segmentBaseTimeMs + (timestamps[i] * 1000L).toLong()).coerceIn(0L, totalDurationMs)
+                    val start = (segmentBaseTimeMs + (timestamps[i] * 1000L).toLong())
+                        .coerceIn(0L, totalDurationMs)
                     val dur = if (durations.getOrNull(i) ?: 0f > 0.01f) durations[i] else 0.2f
-                    val end = (start + (dur * 1000L).toLong()).coerceIn(start + 50L, totalDurationMs)
+                    val end = (start + (dur * 1000L).toLong())
+                        .coerceIn(start + 50L, totalDurationMs)
 
+                    // 过滤超出当前切片范围的内容
                     if (sliceStartMs > 0 && end <= sliceStartMs) continue
                     if (sliceEndMs < totalDurationMs && start >= sliceEndMs) continue
 
+                    // 兼容模型输出的标点：合并到上一个词语末尾
                     if (isPunctuationToken(tok)) {
-                        words.lastOrNull()?.let { last -> 
-                            words[words.size - 1] = last.copy(word = last.word + tok, endMs = maxOf(last.endMs, end))
+                        words.lastOrNull()?.let { last ->
+                            words[words.size - 1] = last.copy(
+                                word = last.word + tok,
+                                endMs = maxOf(last.endMs, end)
+                            )
                         }
                         continue
                     }
+
                     words.add(TranscriptWord(wordId++, tok, start, end))
                 }
             }
 
+            // Fallback：无token时从纯文本均匀分配时间戳
             if (words.isEmpty() && text.isNotBlank()) {
-                val parsed = parseTextToWords(text.split(" ").filter { !isSpecialTag(it) }.joinToString(" "))
-                if (parsed.isNotEmpty()) {
-                    val effective = (if (sliceEndMs == Long.MAX_VALUE) totalDurationMs else sliceEndMs) - sliceStartMs
-                    val avg = (effective / maxOf(1, parsed.size)).coerceIn(100L, 400L)
-                    parsed.forEachIndexed { i, s ->
-                        val start = (segmentBaseTimeMs + i * avg).coerceIn(0L, totalDurationMs)
-                        val end = (start + avg).coerceAtMost(totalDurationMs)
-                        if (!(sliceStartMs > 0 && end <= sliceStartMs)) words.add(TranscriptWord(wordId++, s, start, end))
+                val filteredText = text.filter { !isSpecialTag(it.toString()) }
+                val chars = filteredText.toList()
+                    .filter { it.code in 0x4E00..0x9FFF || it in allPunctuationSet }
+                if (chars.isEmpty()) return null
+
+                val effectiveDuration =
+                    (if (sliceEndMs == Long.MAX_VALUE) totalDurationMs else sliceEndMs) - sliceStartMs
+                val avgDuration = (effectiveDuration / maxOf(1, chars.size)).coerceIn(100L, 400L)
+
+                chars.forEachIndexed { index, c ->
+                    val start = (segmentBaseTimeMs + index * avgDuration).coerceIn(0L, totalDurationMs)
+                    val end = (start + avgDuration).coerceAtMost(totalDurationMs)
+                    if (!(sliceStartMs > 0 && end <= sliceStartMs)) {
+                        words.add(TranscriptWord(wordId++, c.toString(), start, end))
                     }
                 }
             }
-            return if (words.isNotEmpty()) words else null
+
+            return words.ifEmpty { null }
         }
 
-        fun buildSentencesFromWords(words: List<TranscriptWord>, totalDurationMs: Long = 0L): List<TranscriptSentence> {
+
+        /**
+         * 基于词语列表构建句子
+         * 断句规则（满足任一即可）：
+         * 1. 词语末尾包含模型原生结束标点
+         * 2. 相邻词语音间隔超过阈值（兜底）
+         * 全程不主动新增任何标点
+         */
+        /**
+         * 基于词语列表构建句子（纯规则自动加标点）
+         * 断句规则（满足任一即可）：
+         * 1. 词间间隔 ≥ 800ms（长停顿）
+         * 2. 单句累计字符 ≥ 45（长句兜底）
+         * 3. 最后一个词语
+         * 句内逗号规则（满足任一即可）：
+         * 1. 词间间隔 ≥ 250ms 且 < 800ms
+         * 2. 单句累计字符 ≥ 18（句内停顿兜底）
+         */
+        fun buildSentencesFromWords(
+            words: List<TranscriptWord>,
+            totalDurationMs: Long = 0L
+        ): List<TranscriptSentence> {
             if (words.isEmpty()) return emptyList()
-            val punctuated = mutableListOf<TranscriptWord>()
-            var cc = 0
-            for (i in words.indices) {
-                val w = words[i]
-                var txt = w.word.trim()
-                val next = words.getOrNull(i + 1)
-                val pause = if (next != null) (next.startMs - w.endMs).coerceAtLeast(0L) else 1000L
-                cc += txt.length
-                if (!endPunctuation.any { txt.endsWith(it) } && !clausePunctuation.any { txt.endsWith(it) }) {
-                    if (next == null || pause >= 800L || cc >= 35) { txt = "$txt。"; cc = 0 }
-                    else if (pause >= 400L || cc >= 15) { txt = "$txt，"; cc = 0 }
-                } else cc = 0
-                punctuated.add(w.copy(word = txt))
-            }
+
             val sentences = mutableListOf<TranscriptSentence>()
-            var cur = mutableListOf<TranscriptWord>()
-            for (i in punctuated.indices) {
-                cur.add(punctuated[i])
-                if (endPunctuation.any { punctuated[i].word.endsWith(it) } || i == punctuated.size - 1) {
-                    sentences.add(TranscriptSentence(sentences.size.toLong(), cur.joinToString("") { it.word }, cur.first().startMs, cur.last().endMs, cur.toList()))
-                    cur = mutableListOf()
+            val currentSentenceWords = mutableListOf<TranscriptWord>()
+            var currentCharCount = 0
+
+            for (i in words.indices) {
+                val word = words[i]
+                val isLastWord = i == words.size - 1
+
+                // 先把词加入当前句子
+                currentSentenceWords.add(word)
+                currentCharCount += word.word.length
+
+                // 判断是否需要加标点、是否断句
+                val shouldBreak: Boolean
+                val punctuation: String?
+
+                if (isLastWord) {
+                    // 最后一个词强制加句号、断句
+                    shouldBreak = true
+                    punctuation = "。"
+                } else {
+                    val nextWord = words[i + 1]
+                    val gap = nextWord.startMs - word.endMs
+
+                    when {
+                        // 长停顿：句号 + 断句
+                        gap >= PERIOD_GAP_MS -> {
+                            shouldBreak = true
+                            punctuation = "。"
+                        }
+                        // 短停顿 或 达到逗号字数：加逗号，不断句
+                        gap >= COMMA_GAP_MS || currentCharCount >= COMMA_CHAR_LIMIT -> {
+                            shouldBreak = false
+                            punctuation = "，"
+                            currentCharCount = 0 // 加逗号后重置计数
+                        }
+                        // 达到句子最大长度：强制句号断句
+                        currentCharCount >= SENTENCE_MAX_CHAR -> {
+                            shouldBreak = true
+                            punctuation = "。"
+                        }
+                        else -> {
+                            shouldBreak = false
+                            punctuation = null
+                        }
+                    }
+                }
+
+                // 给当前词追加标点（避免重复追加）
+                if (punctuation != null) {
+                    val lastIndex = currentSentenceWords.lastIndex
+                    val lastWord = currentSentenceWords[lastIndex]
+                    if (!allPunctuationSet.contains(lastWord.word.lastOrNull())) {
+                        currentSentenceWords[lastIndex] = lastWord.copy(
+                            word = lastWord.word + punctuation
+                        )
+                    }
+                }
+
+                // 断句：生成句子对象，开启新句子
+                if (shouldBreak && currentSentenceWords.isNotEmpty()) {
+                    sentences.add(
+                        TranscriptSentence(
+                            id = sentences.size.toLong(),
+                            text = currentSentenceWords.joinToString("") { it.word },
+                            startMs = currentSentenceWords.first().startMs,
+                            endMs = currentSentenceWords.last().endMs,
+                            words = currentSentenceWords.toList()
+                        )
+                    )
+                    currentSentenceWords.clear()
+                    currentCharCount = 0
                 }
             }
+
             return sentences
         }
 
+
+        /**
+         * 基于句子列表构建段落（纯排版换行，不新增标点）
+         */
+        /**
+         * 基于句子列表构建段落（纯排版换行）
+         * 累计字符达到阈值且遇到句末标点时，拆分新段落
+         */
         fun buildParagraphsFromSentences(sentences: List<TranscriptSentence>): List<TranscriptParagraph> {
+            if (sentences.isEmpty()) return emptyList()
+
             val paragraphs = mutableListOf<TranscriptParagraph>()
-            var cur = mutableListOf<TranscriptSentence>()
-            var cc = 0
-            for (s in sentences) {
-                cur.add(s)
-                cc += s.text.length
-                if (cc >= 50 && endPunctuation.any { s.text.endsWith(it) }) {
-                    paragraphs.add(TranscriptParagraph(paragraphs.size.toLong(), cur.toList()))
-                    cur = mutableListOf(); cc = 0
+            val currentSentences = mutableListOf<TranscriptSentence>()
+            var currentLength = 0
+
+            for (sentence in sentences) {
+                currentSentences.add(sentence)
+                currentLength += sentence.text.length
+
+                // 达到段落字数阈值，触发分段
+                if (currentLength >= PARAGRAPH_MAX_LENGTH) {
+                    paragraphs.add(TranscriptParagraph(paragraphs.size.toLong(), currentSentences.toList()))
+                    currentSentences.clear()
+                    currentLength = 0
                 }
             }
-            if (cur.isNotEmpty()) paragraphs.add(TranscriptParagraph(paragraphs.size.toLong(), cur.toList()))
+
+            // 剩余不足一段的也单独成段
+            if (currentSentences.isNotEmpty()) {
+                paragraphs.add(TranscriptParagraph(paragraphs.size.toLong(), currentSentences.toList()))
+            }
+
             return paragraphs
         }
+
     }
 
+    // ========== 公开方法 ==========
+    /**
+     * 准备模型文件：从Assets拷贝到内部存储，带版本校验
+     */
     suspend fun prepareModel(): Boolean = withContext(Dispatchers.IO) {
-        try {
+        runCatching {
             val targetDir = File(context.filesDir, modelDirName)
             if (!targetDir.exists()) targetDir.mkdirs()
+
             val versionFile = File(targetDir, "model_version.txt")
             val currentVersion = "sense-voice-vad-v1.1"
             val versionMatch = versionFile.exists() && versionFile.readText().trim() == currentVersion
+
             val requiredFiles = listOf("model.int8.onnx", "tokens.txt", "silero_vad.int8.onnx")
             val assetManager = context.assets
+
             for (fileName in requiredFiles) {
                 val outFile = File(targetDir, fileName)
                 var needsCopy = !versionMatch || !outFile.exists() || outFile.length() == 0L
+
+                // 文件完整性校验
                 if (!needsCopy) {
-                    if (fileName == "model.int8.onnx" && outFile.length() < 150_000_000L) needsCopy = true
-                    else if (fileName == "tokens.txt" && outFile.length() < 200_000L) needsCopy = true
+                    needsCopy = when (fileName) {
+                        "model.int8.onnx" -> outFile.length() < 150_000_000L
+                        "tokens.txt" -> outFile.length() < 200_000L
+                        else -> false
+                    }
                 }
+
                 if (needsCopy) {
                     val tempFile = File(targetDir, "$fileName.tmp")
                     assetManager.open("$modelDirName/$fileName").use { input ->
@@ -188,17 +350,21 @@ class OfflineAsrEngine(private val context: Context) {
                     }
                 }
             }
+
             versionFile.writeText(currentVersion)
             true
-        } catch (e: Exception) { false }
+        }.getOrDefault(false)
     }
 
+    /**
+     * 主入口：识别音频文件
+     */
     suspend fun transcribeAudio(
         audio: AudioItem,
         startOffsetMs: Long = 0L,
         existingWords: List<TranscriptWord> = emptyList(),
         useVad: Boolean = true,
-        chunkTargetMs: Long = 30_000L,
+        chunkTargetMs: Long = DEFAULT_CHUNK_MS,
         onPartialResult: (suspend (TranscriptResult) -> Unit)? = null,
         onProgress: suspend (Float) -> Unit
     ): TranscriptResult = withContext(Dispatchers.Default) {
@@ -206,270 +372,378 @@ class OfflineAsrEngine(private val context: Context) {
         prepareModel()
         onProgress(0.10f)
 
-        // 尝试获取精准时长
+        // 获取音频总时长
         var totalDurationMs = audio.durationMs
         if (totalDurationMs <= 0) {
-            val extractor = MediaExtractor()
-            try {
-                if (File(audio.filePath).exists()) extractor.setDataSource(audio.filePath)
-                else if (audio.contentUri != null) extractor.setDataSource(context, audio.contentUri, null)
-                for (i in 0 until extractor.trackCount) {
-                    val format = extractor.getTrackFormat(i)
-                    if (format.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
-                        totalDurationMs = format.getLong(MediaFormat.KEY_DURATION) / 1000L
-                        break
-                    }
-                }
-            } catch (e: Exception) {
-            } finally {
-                extractor.release()
-            }
+            totalDurationMs = extractAudioDuration(audio)
         }
-        
-        // 如果依然无法获取，保底设为一个较大的值，或者通过解码动态探测
-        if (totalDurationMs <= 0) totalDurationMs = 3600_000L // 默认1小时
+        if (totalDurationMs <= 0) totalDurationMs = 3600_000L // 保底1小时
 
         val accumulatedWords = existingWords.toMutableList()
         var currentOffsetMs = startOffsetMs.coerceIn(0L, totalDurationMs)
-        val redundancyMs = 2_000L
-        val vad = if (useVad) getOrInitVad() else null
-        val recognizer = getOrInitRecognizer() ?: return@withContext TranscriptResult(audio.id, "模型初始化失败", emptyList(), emptyList(), emptyList(), totalDurationMs, true)
 
+        val vad = if (useVad) getOrInitVad() else null
+        val recognizer = getOrInitRecognizer()
+            ?: return@withContext TranscriptResult(
+                audioId = audio.id,
+                fullText = "模型初始化失败",
+                words = emptyList(),
+                sentences = emptyList(),
+                paragraphs = emptyList(),
+                durationMs = totalDurationMs,
+                isCompleted = true
+            )
 
         while (currentOffsetMs < totalDurationMs) {
             val sliceStartMs = currentOffsetMs
             val sliceEndMs = minOf(totalDurationMs, sliceStartMs + chunkTargetMs)
-            
-            // 确保每次都有一定的冗余，避免截断单词
-            val actualStartMs = maxOf(0L, sliceStartMs - redundancyMs)
-            val actualEndMs = minOf(totalDurationMs, sliceEndMs + 500L) // 向后也多读一点
-            
+
+            // 前后冗余，避免截断词语
+            val actualStartMs = maxOf(0L, sliceStartMs - CHUNK_REDUNDANCY_MS)
+            val actualEndMs = minOf(totalDurationMs, sliceEndMs + 500L)
+
             if (actualEndMs <= actualStartMs) break
-            
-            
+
             val samples = decodeAudioTimeRangeTo16kMonoPCM(audio, actualStartMs, actualEndMs)
-            
-            // 关键：如果解码不出数据，说明已经到文件末尾了
+
+            // 解码失败说明已到文件末尾
             if (samples.isEmpty()) {
-                totalDurationMs = currentOffsetMs // 修正时长
+                totalDurationMs = currentOffsetMs
                 break
             }
 
-            val chunkWords = transcribeChunkWithVad(vad, recognizer, samples, actualStartMs, sliceStartMs, sliceEndMs, totalDurationMs)
+            val chunkWords = transcribeChunkWithVad(
+                vad = vad,
+                recognizer = recognizer,
+                samples = samples,
+                actualStartMs = actualStartMs,
+                sliceStartMs = sliceStartMs,
+                sliceEndMs = sliceEndMs,
+                totalDurationMs = totalDurationMs
+            )
+
             if (chunkWords.isNotEmpty()) {
-                val maxExistingId = accumulatedWords.maxOfOrNull { it.id } ?: -1L
-                var nextId = maxExistingId + 1L
+                val maxId = accumulatedWords.maxOfOrNull { it.id } ?: -1L
+                var nextId = maxId + 1L
                 accumulatedWords.addAll(chunkWords.map { it.copy(id = nextId++) })
-            } else {
             }
-            
+
             currentOffsetMs = sliceEndMs
-            onProgress((currentOffsetMs.toFloat() / totalDurationMs).coerceIn(0.1f, 0.95f))
-            
-            val sentences = buildSentencesFromWords(accumulatedWords, totalDurationMs)
-            val paragraphs = buildParagraphsFromSentences(sentences)
-            val fullText = paragraphs.joinToString("\n\n") { p -> p.sentences.joinToString("") { it.text } }
-            
-            onPartialResult?.invoke(TranscriptResult(audio.id, fullText, sentences.flatMap { it.words }, sentences, paragraphs, totalDurationMs, currentOffsetMs >= totalDurationMs, currentOffsetMs))
+            val progress = (currentOffsetMs.toFloat() / totalDurationMs).coerceIn(0.1f, 0.95f)
+            onProgress(progress)
+
+            // 增量返回中间识别结果
+            if (onPartialResult != null) {
+                val sentences = buildSentencesFromWords(accumulatedWords, totalDurationMs)
+                val paragraphs = buildParagraphsFromSentences(sentences)
+                val fullText = paragraphs.joinToString("\n\n") { p ->
+                    p.sentences.joinToString("") { it.text }
+                }
+                onPartialResult(
+                    TranscriptResult(
+                        audioId = audio.id,
+                        fullText = fullText,
+                        words = sentences.flatMap { it.words },
+                        sentences = sentences,
+                        paragraphs = paragraphs,
+                        durationMs = totalDurationMs,
+                        isCompleted = currentOffsetMs >= totalDurationMs,
+                        processedDurationMs = currentOffsetMs
+                    )
+                )
+            }
         }
-        
-        
+
         onProgress(1.0f)
+
         val finalSentences = buildSentencesFromWords(accumulatedWords, totalDurationMs)
         val finalParagraphs = buildParagraphsFromSentences(finalSentences)
-        val finalFullText = finalParagraphs.joinToString("\n\n") { p -> p.sentences.joinToString("") { it.text } }
-        TranscriptResult(audio.id, finalFullText, finalSentences.flatMap { it.words }, finalSentences, finalParagraphs, totalDurationMs, true, totalDurationMs)
+        val finalFullText = finalParagraphs.joinToString("\n\n") { p ->
+            p.sentences.joinToString("") { it.text }
+        }
+
+        TranscriptResult(
+            audioId = audio.id,
+            fullText = finalFullText,
+            words = finalSentences.flatMap { it.words },
+            sentences = finalSentences,
+            paragraphs = finalParagraphs,
+            durationMs = totalDurationMs,
+            isCompleted = true,
+            processedDurationMs = totalDurationMs
+        )
     }
 
+    // ========== 内部方法 ==========
+    /**
+     * 获取或初始化VAD单例
+     */
     private fun getOrInitVad(): Vad? = synchronized(lock) {
         if (cachedVad != null) return cachedVad
         val vadFile = File(context.filesDir, "$modelDirName/silero_vad.int8.onnx")
         if (!vadFile.exists()) return null
-        return try {
-            val sileroConfig = SileroVadModelConfig(model = vadFile.absolutePath, threshold = 0.5f, minSilenceDuration = 0.5f, minSpeechDuration = 0.25f, windowSize = 512, maxSpeechDuration = 30.0f)
-            cachedVad = Vad(assetManager = null, config = VadModelConfig(sileroVadModelConfig = sileroConfig, sampleRate = 16000, numThreads = 1, debug = false))
+
+        return runCatching {
+            val config = SileroVadModelConfig(
+                model = vadFile.absolutePath,
+                threshold = 0.5f,
+                minSilenceDuration = 0.5f,
+                minSpeechDuration = 0.25f,
+                windowSize = 512,
+                maxSpeechDuration = 30.0f
+            )
+            cachedVad = Vad(
+                assetManager = null,
+                config = VadModelConfig(
+                    sileroVadModelConfig = config,
+                    sampleRate = 16000,
+                    numThreads = 1,
+                    debug = false
+                )
+            )
             cachedVad
-        } catch (e: Throwable) { null }
+        }.getOrNull()
     }
 
+    /**
+     * 获取或初始化识别器单例
+     */
     private fun getOrInitRecognizer(): OfflineRecognizer? = synchronized(lock) {
         if (cachedRecognizer != null) return cachedRecognizer
         val modelFile = File(context.filesDir, "$modelDirName/model.int8.onnx")
         val tokensFile = File(context.filesDir, "$modelDirName/tokens.txt")
         if (!modelFile.exists() || !tokensFile.exists()) return null
-        return try {
-            val senseVoiceConfig = OfflineSenseVoiceModelConfig(model = modelFile.absolutePath, language = "", useInverseTextNormalization = true)
-            cachedRecognizer = OfflineRecognizer(config = OfflineRecognizerConfig(featConfig = FeatureConfig(sampleRate = 16000, featureDim = 80), modelConfig = OfflineModelConfig(senseVoice = senseVoiceConfig, tokens = tokensFile.absolutePath, numThreads = 2, debug = false)))
+
+        return runCatching {
+            val senseVoiceConfig = OfflineSenseVoiceModelConfig(
+                model = modelFile.absolutePath,
+                language = "zh",
+                useInverseTextNormalization = true
+            )
+            cachedRecognizer = OfflineRecognizer(
+                config = OfflineRecognizerConfig(
+                    featConfig = FeatureConfig(sampleRate = 16000, featureDim = 80),
+                    modelConfig = OfflineModelConfig(
+                        senseVoice = senseVoiceConfig,
+                        tokens = tokensFile.absolutePath,
+                        numThreads = 2,
+                        debug = false
+                    )
+                )
+            )
             cachedRecognizer
-        } catch (e: Throwable) { null }
+        }.getOrNull()
     }
 
+    /**
+     * 使用VAD对音频分片进行分段识别
+     * VAD异常时自动降级为整段识别
+     */
     private fun transcribeChunkWithVad(
-        vad: Vad?, recognizer: OfflineRecognizer, samples: FloatArray,
-        actualStartMs: Long, sliceStartMs: Long, sliceEndMs: Long, totalDurationMs: Long
+        vad: Vad?,
+        recognizer: OfflineRecognizer,
+        samples: FloatArray,
+        actualStartMs: Long,
+        sliceStartMs: Long,
+        sliceEndMs: Long,
+        totalDurationMs: Long
     ): List<TranscriptWord> {
-        if (vad == null) return runSherpaRecognitionSegment(recognizer, samples, actualStartMs, sliceStartMs, sliceEndMs, totalDurationMs) ?: emptyList()
+        if (vad == null) {
+            return runSherpaRecognitionSegment(
+                recognizer = recognizer,
+                samples = samples,
+                baseTimeMs = actualStartMs,
+                sliceStartMs = sliceStartMs,
+                sliceEndMs = sliceEndMs,
+                totalDurationMs = totalDurationMs
+            ) ?: emptyList()
+        }
+
         val words = mutableListOf<TranscriptWord>()
-        try {
+        runCatching {
             vad.reset()
             var offset = 0
+            val windowSize = 512
+
             while (offset < samples.size) {
-                val end = minOf(offset + 512, samples.size)
+                val end = minOf(offset + windowSize, samples.size)
                 vad.acceptWaveform(samples.copyOfRange(offset, end))
+
                 while (!vad.empty()) {
-                    val seg = vad.front()
-                    if (seg.samples.isNotEmpty()) {
-                        runSherpaRecognitionSegment(recognizer, seg.samples, actualStartMs + (seg.start * 1000L / 16000), sliceStartMs, sliceEndMs, totalDurationMs)?.let { words.addAll(it) }
+                    val segment = vad.front()
+                    if (segment.samples.isNotEmpty()) {
+                        val segmentStartMs = actualStartMs + (segment.start * 1000L / 16000)
+                        runSherpaRecognitionSegment(
+                            recognizer = recognizer,
+                            samples = segment.samples,
+                            baseTimeMs = segmentStartMs,
+                            sliceStartMs = sliceStartMs,
+                            sliceEndMs = sliceEndMs,
+                            totalDurationMs = totalDurationMs
+                        )?.let { words.addAll(it) }
                     }
                     vad.pop()
                 }
-                offset += 512
+                offset += windowSize
             }
+
+            // 刷新缓冲区剩余数据
             vad.flush()
             while (!vad.empty()) {
-                val seg = vad.front()
-                if (seg.samples.isNotEmpty()) {
-                    runSherpaRecognitionSegment(recognizer, seg.samples, actualStartMs + (seg.start * 1000L / 16000), sliceStartMs, sliceEndMs, totalDurationMs)?.let { words.addAll(it) }
+                val segment = vad.front()
+                if (segment.samples.isNotEmpty()) {
+                    val segmentStartMs = actualStartMs + (segment.start * 1000L / 16000)
+                    runSherpaRecognitionSegment(
+                        recognizer = recognizer,
+                        samples = segment.samples,
+                        baseTimeMs = segmentStartMs,
+                        sliceStartMs = sliceStartMs,
+                        sliceEndMs = sliceEndMs,
+                        totalDurationMs = totalDurationMs
+                    )?.let { words.addAll(it) }
                 }
                 vad.pop()
             }
-        } catch (e: Throwable) {
-            return runSherpaRecognitionSegment(recognizer, samples, actualStartMs, sliceStartMs, sliceEndMs, totalDurationMs) ?: emptyList()
+        }.getOrElse {
+            // VAD失败时降级为整段识别
+            return runSherpaRecognitionSegment(
+                recognizer = recognizer,
+                samples = samples,
+                baseTimeMs = actualStartMs,
+                sliceStartMs = sliceStartMs,
+                sliceEndMs = sliceEndMs,
+                totalDurationMs = totalDurationMs
+            ) ?: emptyList()
         }
+
         return words
     }
 
+    /**
+     * 执行单段语音识别
+     */
     private fun runSherpaRecognitionSegment(
-        recognizer: OfflineRecognizer, samples: FloatArray, baseTimeMs: Long,
-        sliceStartMs: Long, sliceEndMs: Long, totalDurationMs: Long
+        recognizer: OfflineRecognizer,
+        samples: FloatArray,
+        baseTimeMs: Long,
+        sliceStartMs: Long,
+        sliceEndMs: Long,
+        totalDurationMs: Long
     ): List<TranscriptWord>? {
         var stream: OfflineStream? = null
-        return try {
+        return runCatching {
             stream = recognizer.createStream()
-            stream.acceptWaveform(samples, 16000)
+            stream?.acceptWaveform(samples, 16000)
             recognizer.decode(stream)
-            val res = recognizer.getResult(stream)
-            processSenseVoiceResult(res.text, res.tokens, res.timestamps, res.durations, baseTimeMs, sliceStartMs, sliceEndMs, totalDurationMs)
-        } catch (e: Throwable) { null } finally { stream?.release() }
+            val result = recognizer.getResult(stream)
+            android.util.Log.d("ASR_DEBUG", "原始文本: ${result.text}")
+            android.util.Log.d("ASR_DEBUG", "tokens: ${result.tokens.joinToString("|")}")
+            processSenseVoiceResult(
+                text = result.text,
+                tokens = result.tokens,
+                timestamps = result.timestamps,
+                durations = result.durations,
+                segmentBaseTimeMs = baseTimeMs,
+                sliceStartMs = sliceStartMs,
+                sliceEndMs = sliceEndMs,
+                totalDurationMs = totalDurationMs
+            )
+        }.getOrNull().also {
+            runCatching { stream?.release() }
+        }
     }
 
+    /**
+     * 使用FFmpeg解码指定时间段的音频，输出16kHz单声道归一化PCM
+     */
     private suspend fun decodeAudioTimeRangeTo16kMonoPCM(
-        audio: AudioItem, startMs: Long, endMs: Long
+        audio: AudioItem,
+        startMs: Long,
+        endMs: Long
     ): FloatArray = withContext(Dispatchers.IO) {
+        val inputFile = getInputFile(audio) ?: return@withContext FloatArray(0)
+        if (!inputFile.exists()) return@withContext FloatArray(0)
+
+        val startSec = startMs / 1000.0
+        val endSec = endMs / 1000.0
+        val outputPcmFile = File(context.cacheDir, "asr_pcm_${System.currentTimeMillis()}.pcm")
+
+        val command = "-ss $startSec -to $endSec -i \"${inputFile.absolutePath}\" " +
+                "-ar 16000 -ac 1 -f s16le -acodec pcm_s16le \"${outputPcmFile.absolutePath}\""
+
+        return@withContext runCatching {
+            val session = FFmpegKit.execute(command)
+            if (!ReturnCode.isSuccess(session.returnCode)) {
+                return@runCatching FloatArray(0)
+            }
+
+            if (!outputPcmFile.exists() || outputPcmFile.length() == 0L) {
+                return@runCatching FloatArray(0)
+            }
+
+            val bytes = outputPcmFile.readBytes()
+            outputPcmFile.delete() // 清理临时文件
+
+            val shortBuffer = ByteBuffer.wrap(bytes)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .asShortBuffer()
+
+            val floatArray = FloatArray(shortBuffer.remaining())
+            for (i in floatArray.indices) {
+                floatArray[i] = (shortBuffer.get().toInt() / 32768.0f).coerceIn(-1f, 1f)
+            }
+
+            floatArray
+        }.getOrDefault(FloatArray(0)).also {
+            runCatching { outputPcmFile.delete() }
+        }
+    }
+
+    /**
+     * 提取音频时长（仅读元数据，轻量高效）
+     */
+    private fun extractAudioDuration(audio: AudioItem): Long {
         val extractor = MediaExtractor()
-        var codec: MediaCodec? = null
-        try {
-            if (File(audio.filePath).exists()) extractor.setDataSource(audio.filePath)
-            else if (audio.contentUri != null) extractor.setDataSource(context, audio.contentUri, null)
-            else return@withContext FloatArray(0)
-            
-            var trackIdx = -1
+        return try {
+            if (File(audio.filePath).exists()) {
+                extractor.setDataSource(audio.filePath)
+            } else if (audio.contentUri != null) {
+                extractor.setDataSource(context, audio.contentUri, null)
+            } else {
+                return 0L
+            }
+
             for (i in 0 until extractor.trackCount) {
-                val mime = extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME)
-                if (mime?.startsWith("audio/") == true) { trackIdx = i; break }
-            }
-            if (trackIdx < 0) return@withContext FloatArray(0)
-            
-            extractor.selectTrack(trackIdx)
-            val format = extractor.getTrackFormat(trackIdx)
-            val startUs = startMs * 1000L
-            val endUs = endMs * 1000L
-            
-            // 关键：SEEK 后需要检查实际落点
-            extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-            
-            codec = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!)
-            codec.configure(format, null, null, 0)
-            codec.start()
-            
-            var sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-            var channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-            
-            // 预估 PCM 大小，避免频繁扩容
-            val estimatedSamples = ((endMs - startMs + 1000) * sampleRate / 1000).toInt()
-            var pcmData = ShortArray(maxOf(estimatedSamples, 1024))
-            var pcmPos = 0
-            
-            val info = MediaCodec.BufferInfo()
-            var outEOS = false
-            var inEOS = false
-            
-            var decodeStartTime = System.currentTimeMillis()
-            
-            while (!outEOS && System.currentTimeMillis() - decodeStartTime < 10000) { // 增加超时保护
-                if (!inEOS) {
-                    val inIdx = codec.dequeueInputBuffer(10_000)
-                    if (inIdx >= 0) {
-                        codec.getInputBuffer(inIdx)?.let { buf ->
-                            val size = extractor.readSampleData(buf, 0)
-                            val sampleTime = extractor.sampleTime
-                            
-                            if (size < 0 || (sampleTime > endUs + 500_000L && sampleTime > 0)) {
-                                codec.queueInputBuffer(inIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                                inEOS = true
-                            } else {
-                                codec.queueInputBuffer(inIdx, 0, size, sampleTime, 0)
-                                extractor.advance()
-                            }
-                        }
-                    }
-                }
-                
-                val outIdx = codec.dequeueOutputBuffer(info, 10_000)
-                if (outIdx >= 0) {
-                    // 只要在范围内，或者是因为 SEEK 导致的略微提前的数据，都采纳
-                    // 但我们要严格遵守 endUs，防止读过头
-                    if (info.presentationTimeUs >= (startUs - 500_000L) && info.presentationTimeUs <= endUs + 100_000L) {
-                        codec.getOutputBuffer(outIdx)?.let { buf ->
-                            buf.order(ByteOrder.LITTLE_ENDIAN)
-                            val sb = buf.asShortBuffer()
-                            val count = sb.remaining() / channels
-                            
-                            if (pcmPos + count >= pcmData.size) {
-                                pcmData = pcmData.copyOf(maxOf(pcmData.size * 2, pcmPos + count + 1024))
-                            }
-                            
-                            while (sb.hasRemaining()) {
-                                val left = sb.get().toInt()
-                                val right = if (channels >= 2) sb.get().toInt() else left
-                                pcmData[pcmPos++] = ((left + right) / 2).toShort()
-                                for (c in 2 until channels) if (sb.hasRemaining()) sb.get()
-                            }
-                        }
-                    }
-                    
-                    if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) || info.presentationTimeUs > endUs) {
-                        outEOS = true
-                    }
-                    codec.releaseOutputBuffer(outIdx, false)
-                } else if (outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                    sampleRate = codec.outputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-                    channels = codec.outputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                val format = extractor.getTrackFormat(i)
+                if (format.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
+                    return format.getLong(MediaFormat.KEY_DURATION) / 1000L
                 }
             }
-            
-            if (pcmPos == 0) return@withContext FloatArray(0)
-            
-            // 重采样到 16kHz
-            val ratio = 16000.0 / sampleRate
-            val result = FloatArray((pcmPos * ratio).toInt())
-            for (i in result.indices) {
-                val src = i / ratio
-                val idx = src.toInt()
-                val f = (src - idx).toFloat()
-                val s0 = pcmData[idx.coerceIn(0, pcmPos - 1)]
-                val s1 = pcmData[(idx + 1).coerceIn(0, pcmPos - 1)]
-                result[i] = ((s0 + f * (s1 - s0)) / 32768f).coerceIn(-1f, 1f)
-            }
-            result
+            0L
         } catch (e: Exception) {
-            FloatArray(0)
+            0L
         } finally {
-            try {
-                codec?.stop()
-                codec?.release()
-            } catch (e: Exception) {}
             extractor.release()
         }
+    }
+
+    /**
+     * 处理输入音频：Uri类型转存为临时文件
+     */
+    private suspend fun getInputFile(audio: AudioItem): File? = withContext(Dispatchers.IO) {
+        if (File(audio.filePath).exists()) {
+            return@withContext File(audio.filePath)
+        }
+
+        val uri = audio.contentUri ?: return@withContext null
+        val tempFile = File(context.cacheDir, "asr_input_${audio.id}.tmp")
+
+        runCatching {
+            if (tempFile.exists()) tempFile.delete()
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                tempFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            if (tempFile.exists()) tempFile else null
+        }.getOrNull()
     }
 }
