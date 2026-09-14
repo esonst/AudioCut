@@ -109,6 +109,8 @@ cd AudioCut
 | `silero_vad.int8.onnx` | Silero 语音活动检测模型 |
 | `tokens.txt` | 词表文件 |
 
+模型下载链接[sense-voice-small-onnxv2](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2)
+
 模型在首次使用时会自动复制到应用私有目录，识别全程在本地完成。
 
 ## 许可证
