@@ -1,4 +1,4 @@
-package com.example.mp3player.ui.screens
+﻿package com.example.mp3player.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -21,18 +21,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mp3player.ui.theme.*
 import com.example.mp3player.viewmodel.MainViewModel
+import com.example.mp3player.viewmodel.SettingsViewModel
 
 /**
  * 设置界面：管理 ASR 切片、VAD (恒开) 及其他超参数
  */
 @Composable
-fun SettingsScreen(
-    viewModel: MainViewModel,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val asrChunkSeconds by viewModel.asrChunkSeconds.collectAsState()
-    val enableSlicing by viewModel.enableSlicing.collectAsState()
+fun SettingsScreen(mainViewModel: MainViewModel, settingsViewModel: SettingsViewModel, onBack: () -> Unit, modifier: Modifier = Modifier) {
+    val asrChunkSeconds by settingsViewModel.asrChunkSeconds.collectAsState()
+    val enableSlicing by settingsViewModel.enableSlicing.collectAsState()
 
     var chunkInput by remember(asrChunkSeconds) { mutableStateOf(asrChunkSeconds.toString()) }
 
@@ -76,7 +73,7 @@ fun SettingsScreen(
                     subtitle = "长音频建议开启以节省内存，关闭则全量识别",
                     checked = enableSlicing,
                     onCheckedChange = {
-                        viewModel.setEnableSlicing(it)
+                        settingsViewModel.setEnableSlicing(it)
                     }
                 )
                 
@@ -89,7 +86,7 @@ fun SettingsScreen(
                         onValueChange = { input ->
                             chunkInput = input.filter { it.isDigit() }
                             chunkInput.toIntOrNull()?.let { 
-                                if (it > 0) viewModel.setAsrChunkSeconds(it)
+                                if (it > 0) settingsViewModel.setAsrChunkSeconds(it)
                             }
                         }
                     )
@@ -111,7 +108,7 @@ fun SettingsScreen(
                     subtitle = "删除本地所有已识别的文字文稿",
                     actionLabel = "清空",
                     onClick = {
-                        viewModel.clearAllTranscripts()
+                        settingsViewModel.clearAllTranscripts()
                     }
                 )
                 SettingsActionItem(
@@ -120,7 +117,7 @@ fun SettingsScreen(
                     subtitle = "删除导出目录下的所有合并文件",
                     actionLabel = "清理",
                     onClick = {
-                        viewModel.clearAllExports()
+                        settingsViewModel.clearAllExports()
                     }
                 )
             }

@@ -26,8 +26,10 @@ import com.example.mp3player.data.model.AudioItem
 import com.example.mp3player.ui.components.FloatingPlayerBar
 import com.example.mp3player.ui.components.OptimizedTranscriptView
 import com.example.mp3player.ui.theme.*
-import com.example.mp3player.viewmodel.AppScreen
+import com.example.mp3player.navigation.AppScreen
 import com.example.mp3player.viewmodel.MainViewModel
+import com.example.mp3player.viewmodel.TranscriptViewModel
+import com.example.mp3player.viewmodel.ClipViewModel
 
 /**
  * 文稿与音频剪辑页面
@@ -36,21 +38,23 @@ import com.example.mp3player.viewmodel.MainViewModel
  * 2. 局部重组：计算 activeWordId，避免播放进度更新时全量文稿重组。
  * 3. 预计算：在 ViewModel 中预处理片段包含状态，避免 UI 线程 O(W*S) 计算。
  */
-@Composable fun TranscriptScreen(
-    viewModel: MainViewModel,
+@Composable
+fun TranscriptScreen(
+    mainViewModel: MainViewModel,
+    transcriptViewModel: TranscriptViewModel,
+    clipViewModel: ClipViewModel,
     modifier: Modifier = Modifier
 ) {
-    val currentAudio by viewModel.currentPlayingAudio.collectAsState()
-    val isPlaying by viewModel.isPlaying.collectAsState()
-    val currentPositionMs by viewModel.currentPositionMs.collectAsState()
-    val durationMs by viewModel.durationMs.collectAsState()
-    val isAsrLoading by viewModel.isAsrLoading.collectAsState()
-    val asrProgress by viewModel.asrProgress.collectAsState()
-    val transcriptResult by viewModel.transcriptResult.collectAsState()
-    val wordsInSegmentsIds by viewModel.wordsInSegmentsIds.collectAsState()
-    val segments by viewModel.segments.collectAsState()
-    val asrProgressText by viewModel.asrProgressText.collectAsState()
-    val asrChunkSeconds by viewModel.asrChunkSeconds.collectAsState()
+    val currentAudio by mainViewModel.currentPlayingAudio.collectAsState()
+    val isPlaying by mainViewModel.isPlaying.collectAsState()
+    val currentPositionMs by mainViewModel.currentPositionMs.collectAsState()
+    val durationMs by mainViewModel.durationMs.collectAsState()
+    val isAsrLoading by transcriptViewModel.isAsrLoading.collectAsState()
+    val asrProgress by transcriptViewModel.asrProgress.collectAsState()
+    val transcriptResult by transcriptViewModel.transcriptResult.collectAsState()
+    val segments by clipViewModel.segments.collectAsState()
+    val asrProgressText by transcriptViewModel.asrProgressText.collectAsState()
+    val asrChunkSeconds by transcriptViewModel.asrChunkSeconds.collectAsState()
 
     // 文本选择拖动期间隐藏浮动播放卡片
     var isDraggingSelection by remember { mutableStateOf(false) }
@@ -67,6 +71,28 @@ import com.example.mp3player.viewmodel.MainViewModel
     val activeWordId by remember(currentPositionMs, transcriptResult) {
         derivedStateOf {
             transcriptResult?.words?.find { currentPositionMs in it.startMs..it.endMs }?.id
+        }
+    }
+
+    // 预计算哪些字在标记片段中，避免 UI 渲染循环中 O(WS) 查找
+    val wordsInSegmentsIds by remember(transcriptResult, segments) {
+        derivedStateOf {
+            val transcript = transcriptResult ?: return@derivedStateOf emptySet<Long>()
+            if (segments.isEmpty()) return@derivedStateOf emptySet<Long>()
+            val merged = mutableListOf<Pair<Long, Long>>()
+            for (seg in segments.sortedBy { it.startMs }) {
+                val last = merged.lastOrNull()
+                if (last != null && seg.startMs <= last.second) {
+                    merged[merged.size - 1] = last.first to maxOf(last.second, seg.endMs)
+                } else {
+                    merged.add(seg.startMs to seg.endMs)
+                }
+            }
+            val starts = merged.map { it.first }
+            transcript.words.filter { w ->
+                val idx = starts.binarySearch(w.startMs).let { if (it >= 0) it else -it - 2 }
+                idx >= 0 && w.endMs <= merged[idx].second
+            }.map { it.id }.toSet()
         }
     }
 
@@ -116,7 +142,7 @@ import com.example.mp3player.viewmodel.MainViewModel
                 if(currentAudio != null) {
                     if (isAsrLoading) {
                         Button(
-                            onClick = { viewModel.stopAsrRecognition() },
+                            onClick = { transcriptViewModel.stopAsrRecognition() },
                             colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f)),
                             shape = RoundedCornerShape(10.dp)
                         ) {
@@ -124,7 +150,7 @@ import com.example.mp3player.viewmodel.MainViewModel
                         }
                     } else {
                         Button(
-                            onClick = { viewModel.startAsrRecognition(resumeIfPossible = true) },
+                            onClick = { transcriptViewModel.startAsrRecognition(resumeIfPossible = true) },
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryLight),
                             shape = RoundedCornerShape(10.dp)
                         ) {
@@ -162,7 +188,8 @@ import com.example.mp3player.viewmodel.MainViewModel
                         if (result.words.isNotEmpty()) {
                             item {
                                 TranscriptHeaderView(
-                                    viewModel = viewModel,
+                                    mainViewModel = mainViewModel,
+                                    transcriptViewModel = transcriptViewModel,
                                     wordCount = result.words.size,
                                     fullText = result.fullText
                                 )
@@ -182,12 +209,12 @@ import com.example.mp3player.viewmodel.MainViewModel
                                             transcriptResult = result,
                                             activeWordId = activeWordId,
                                             wordsInSegmentsIds = wordsInSegmentsIds,
-                                            onSelectionChanged = { viewModel.setSelectedTextRange(it) },
+                                            onSelectionChanged = { transcriptViewModel.setSelectedTextRange(it) },
                                             onWordClick = { startMs ->
-                                                viewModel.seekToAndPlay(startMs)
+                                                mainViewModel.seekToAndPlay(startMs)
                                             },
-                                            onCreateSegment = { viewModel.createSegmentFromTextSelection(it) },
-                                            onCreateTrimRange = { viewModel.createTrimRangeFromTextSelection(it) },
+                                            onCreateSegment = { transcriptViewModel.createSegmentFromSelection() },
+                                            onCreateTrimRange = { transcriptViewModel.createTrimFromSelection() },
                                             onSelectionDragChanged = { isDraggingSelection = it },
                                             modifier = Modifier.heightIn(max = 600.dp)
                                         )
@@ -210,13 +237,13 @@ import com.example.mp3player.viewmodel.MainViewModel
                 isPlaying = isPlaying,
                 currentPositionMs = currentPositionMs,
                 durationMs = durationMs,
-                onTogglePlayPause = { viewModel.toggleMainPlayPause() },
-                onFastForward5s = { viewModel.mainFastForwardOrRewind(5) },
-                onRewind5s = { viewModel.mainFastForwardOrRewind(-5) },
-                onPlayPrevious = { viewModel.playMainPrevious() },
-                onPlayNext = { viewModel.playMainNext() },
-                onSeekTo = { viewModel.mainSeekTo(it) },
-                onClickBar = { viewModel.navigateTo(AppScreen.TRANSCRIPT) }, // 跳转到自身（或根据需要调整）
+                onTogglePlayPause = { mainViewModel.toggleMainPlayPause() },
+                onFastForward5s = { mainViewModel.mainFastForwardOrRewind(5) },
+                onRewind5s = { mainViewModel.mainFastForwardOrRewind(-5) },
+                onPlayPrevious = { mainViewModel.playMainPrevious() },
+                onPlayNext = { mainViewModel.playMainNext() },
+                onSeekTo = { mainViewModel.mainSeekTo(it) },
+                onClickBar = { mainViewModel.navigateTo(AppScreen.TRANSCRIPT) },
                 modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 16.dp, vertical = 80.dp)
             )
         }
@@ -261,7 +288,8 @@ import com.example.mp3player.viewmodel.MainViewModel
 
 @Composable
 fun TranscriptHeaderView(
-    viewModel: MainViewModel,
+    mainViewModel: MainViewModel,
+    transcriptViewModel: TranscriptViewModel,
     wordCount: Int,
     fullText: String
 ) {
@@ -285,12 +313,12 @@ fun TranscriptHeaderView(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = {
-                        viewModel.deleteCurrentTranscript()
+                        transcriptViewModel.deleteCurrentTranscript()
                     }) {
                         Text("删除文稿", fontSize = 12.sp, color = Color.Red.copy(alpha = 0.7f))
                     }
                     TextButton(onClick = {
-                        viewModel.navigateTo(AppScreen.CLIP)
+                        mainViewModel.navigateTo(AppScreen.CLIP)
                     }) {
                         Text("进入剪辑", fontSize = 12.sp, color = PrimaryLight)
                     }

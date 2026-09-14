@@ -1,19 +1,35 @@
 package com.example.mp3player
 
 import android.app.Application
-import com.example.mp3player.utils.CrashHandler
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import com.example.mp3player.di.AppContainer
 
 class Mp3Application : Application() {
-    override fun onCreate() {
-        super.onCreate()
-        instance = this
-        
-        // 初始化全局异常处理器
-        CrashHandler(this)
+    companion object {
+        const val CHANNEL_ID = "audio_playback_channel"
+        const val CHANNEL_NAME = "音频播放控制"
     }
 
-    companion object {
-        lateinit var instance: Mp3Application
-            private set
+    lateinit var container: AppContainer
+        private set
+
+    override fun onCreate() {
+        super.onCreate()
+        container = AppContainer(this)
+        createNotificationChannel()
+    }
+
+    private fun createNotificationChannel() {
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            CHANNEL_NAME,
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "音频播放控制通知"
+            setShowBadge(false)
+        }
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(channel)
     }
 }

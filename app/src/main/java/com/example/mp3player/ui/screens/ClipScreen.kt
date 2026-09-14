@@ -1,4 +1,4 @@
-package com.example.mp3player.ui.screens
+﻿package com.example.mp3player.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -28,34 +28,32 @@ import com.example.mp3player.ui.components.SegmentEditorHeader
 import com.example.mp3player.ui.components.SegmentItemCard
 import com.example.mp3player.ui.theme.*
 import com.example.mp3player.viewmodel.MainViewModel
-import com.example.mp3player.viewmodel.PlayerTab
+import com.example.mp3player.viewmodel.ClipViewModel
+import com.example.mp3player.navigation.PlayerTab
 
 /**
  * 剪辑页面（独立的标记片段管理与音频切片合成导出界面）
  * 包含顶部 Tab 联动、片段滑动调节与 0.1s 精确微调、片段试听与多格式拼接导出
  */
 @Composable
-fun ClipScreen(
-    viewModel: MainViewModel,
-    modifier: Modifier = Modifier
-) {
-    val currentAudio by viewModel.currentPlayingAudio.collectAsState()
-    val isPlaying by viewModel.isPlaying.collectAsState()
-    val durationMs by viewModel.durationMs.collectAsState()
-    val currentPositionMs by viewModel.currentPositionMs.collectAsState()
-    val segments by viewModel.segments.collectAsState()
-    val previewingSegmentId by viewModel.previewingSegmentId.collectAsState()
-    val isExporting by viewModel.isExporting.collectAsState()
-    val exportProgress by viewModel.exportProgress.collectAsState()
-    val exportResult by viewModel.exportResult.collectAsState()
+fun ClipScreen(mainViewModel: MainViewModel, clipViewModel: ClipViewModel, modifier: Modifier = Modifier) {
+    val currentAudio by mainViewModel.currentPlayingAudio.collectAsState()
+    val isPlaying by mainViewModel.isPlaying.collectAsState()
+    val durationMs by mainViewModel.durationMs.collectAsState()
+    val currentPositionMs by mainViewModel.currentPositionMs.collectAsState()
+    val segments by clipViewModel.segments.collectAsState()
+    val previewingSegmentId by clipViewModel.previewingSegmentId.collectAsState()
+    val isExporting by clipViewModel.isExporting.collectAsState()
+    val exportProgress by clipViewModel.exportProgress.collectAsState()
+    val exportResult by clipViewModel.exportResult.collectAsState()
 
     // 合并试听状态
-    val isGeneratingMergedPreview by viewModel.isGeneratingMergedPreview.collectAsState()
-    val mergedPreviewResult by viewModel.mergedPreviewResult.collectAsState()
-    val isMergedPreviewPlaying by viewModel.isMergedPreviewPlaying.collectAsState()
-    val mergedPreviewPositionMs by viewModel.mergedPreviewPositionMs.collectAsState()
-    val mergedPreviewDurationMs by viewModel.mergedPreviewDurationMs.collectAsState()
-    val mergedPreviewSpeed by viewModel.mergedPreviewSpeed.collectAsState()
+    val isGeneratingMergedPreview by clipViewModel.isGeneratingMergedPreview.collectAsState()
+    val mergedPreviewResult by clipViewModel.mergedPreviewResult.collectAsState()
+    val isMergedPreviewPlaying by clipViewModel.isMergedPreviewPlaying.collectAsState()
+    val mergedPreviewPositionMs by clipViewModel.mergedPreviewPositionMs.collectAsState()
+    val mergedPreviewDurationMs by clipViewModel.mergedPreviewDurationMs.collectAsState()
+    val mergedPreviewSpeed by clipViewModel.mergedPreviewSpeed.collectAsState()
 
     val totalDuration = if (durationMs > 0) durationMs else currentAudio?.durationMs ?: 0L
 
@@ -86,7 +84,7 @@ fun ClipScreen(
             
             // 右上角【合并】按钮：点击执行合并预览
             OutlinedButton(
-                onClick = { viewModel.startOrToggleMergedPreview() },
+                onClick = { clipViewModel.startOrToggleMergedPreview() },
                 enabled = !isGeneratingMergedPreview,
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryLight),
@@ -174,7 +172,7 @@ fun ClipScreen(
                                 ) {
                                     Button(
                                         onClick = {
-                                            viewModel.switchTab(PlayerTab.TRANSCRIPT)
+                                            mainViewModel.switchTab(PlayerTab.TRANSCRIPT)
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryLight),
                                         shape = RoundedCornerShape(10.dp)
@@ -185,7 +183,7 @@ fun ClipScreen(
                                     }
 
                                     // 空白状态下的新增片段按钮：在当前播放位置创建片段卡片
-                                    IconButton(onClick = { viewModel.createManualSegmentAtCurrentPos() }) {
+                                    IconButton(onClick = { clipViewModel.createManualSegmentAtCurrentPos() }) {
                                         Icon(Icons.Default.AddCircleOutline, contentDescription = "新建片段", tint = PrimaryLight)
                                     }
                                 }
@@ -206,18 +204,18 @@ fun ClipScreen(
                             mergedPreviewPositionMs = mergedPreviewPositionMs,
                             mergedPreviewDurationMs = mergedPreviewDurationMs,
                             mergedPreviewSpeed = mergedPreviewSpeed,
-                            onStartOrToggleMergedPreview = { viewModel.startOrToggleMergedPreview() },
-                            onExportMerged = { name, format -> viewModel.exportMergedSegments(name, format) },
-                            onPlayMergedPreview = { viewModel.playMergedPreview() },
-                            onPauseMergedPreview = { viewModel.pauseMergedPreview() },
-                            onSeekMergedPreview = { viewModel.seekMergedPreview(it) },
-                            onRewindMergedPreview = { viewModel.rewindMergedPreview(it) },
-                            onSetMergedPreviewSpeed = { viewModel.setMergedPreviewSpeed(it) },
-                            onCloseMergedPreview = { viewModel.closeMergedPreview() },
-                            onSaveToLibrary = { viewModel.saveMergedPreviewToLibrary(it) },
+                            onStartOrToggleMergedPreview = { clipViewModel.startOrToggleMergedPreview() },
+                            onExportMerged = { name, format -> clipViewModel.exportMergedSegments(name, format) },
+                            onPlayMergedPreview = { clipViewModel.playMergedPreview() },
+                            onPauseMergedPreview = { clipViewModel.pauseMergedPreview() },
+                            onSeekMergedPreview = { clipViewModel.seekMergedPreview(it) },
+                            onRewindMergedPreview = { clipViewModel.rewindMergedPreview(it) },
+                            onSetMergedPreviewSpeed = { clipViewModel.setMergedPreviewSpeed(it) },
+                            onCloseMergedPreview = { clipViewModel.closeMergedPreview() },
+                            onSaveToLibrary = { clipViewModel.saveMergedPreviewToLibrary(it) },
                             onConvertFormat = { 
                                 val path = mergedPreviewResult?.takeIf { it.isSuccess }?.outputPath?.takeIf { it.isNotEmpty() }
-                                viewModel.navigateToConvertFormat(path)
+                                mainViewModel.navigateToConvertFormat(path)
                             }
                         )
                     }
@@ -233,15 +231,15 @@ fun ClipScreen(
                             maxDurationMs = totalDuration,
                             currentPositionMs = currentPositionMs,
                             isCurrentlyPreviewing = previewingSegmentId == segment.id && isPlaying,
-                            onToggleSelect = { viewModel.toggleSegmentSelected(segment.id) },
-                            onUpdateRange = { start, end -> viewModel.updateSegmentRange(segment.id, start, end) },
+                            onToggleSelect = { clipViewModel.toggleSegmentSelected(segment.id) },
+                            onUpdateRange = { start, end -> clipViewModel.updateSegmentRange(segment.id, start, end) },
                             onRenameClick = { 
                                 renameText = segment.title
                                 showRenameDialog = true 
                             },
-                            onCopy = { viewModel.copySegment(segment.id) },
-                            onDelete = { viewModel.deleteSegment(segment.id) },
-                            onPreview = { viewModel.previewSegment(segment) },
+                            onCopy = { clipViewModel.copySegment(segment.id) },
+                            onDelete = { clipViewModel.deleteSegment(segment.id) },
+                            onPreview = { clipViewModel.previewSegment(segment) },
                             modifier = Modifier
                                 .animateItem() // 实现丝滑移位占位
                                 .graphicsLayer {
@@ -269,11 +267,11 @@ fun ClipScreen(
                                             // 优化索引交换逻辑
                                             val threshold = 60f
                                             if (dragOffset > threshold && index < segments.size - 1) {
-                                                viewModel.reorderSegments(index, index + 1)
+                                                clipViewModel.reorderSegments(index, index + 1)
                                                 draggingItemIndex = index + 1
                                                 dragOffset -= threshold * 1.2f
                                             } else if (dragOffset < -threshold && index > 0) {
-                                                viewModel.reorderSegments(index, index - 1)
+                                                clipViewModel.reorderSegments(index, index - 1)
                                                 draggingItemIndex = index - 1
                                                 dragOffset += threshold * 1.2f
                                             }
@@ -289,7 +287,7 @@ fun ClipScreen(
                                 text = { OutlinedTextField(value = renameText, onValueChange = { renameText = it }, singleLine = true) },
                                 confirmButton = { 
                                     Button(onClick = { 
-                                        viewModel.renameSegment(segment.id, renameText)
+                                        clipViewModel.renameSegment(segment.id, renameText)
                                         showRenameDialog = false 
                                     }) { Text("确定") }
                                 },
@@ -301,7 +299,7 @@ fun ClipScreen(
                     // 新增片段按钮：放在剪辑卡片列表下方
                     item {
                         OutlinedButton(
-                            onClick = { viewModel.createManualSegmentAtCurrentPos() },
+                            onClick = { clipViewModel.createManualSegmentAtCurrentPos() },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryLight)

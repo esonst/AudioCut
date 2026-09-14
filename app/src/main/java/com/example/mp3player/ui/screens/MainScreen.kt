@@ -3,45 +3,71 @@ package com.example.mp3player.ui.screens
 import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.mp3player.navigation.AppScreen
 import com.example.mp3player.ui.components.BottomNavBar
-import com.example.mp3player.viewmodel.AppScreen
+import com.example.mp3player.ui.components.FloatingPlayerBar
+import com.example.mp3player.viewmodel.AudioLibraryViewModel
+import com.example.mp3player.viewmodel.ClipViewModel
+import com.example.mp3player.viewmodel.ConvertViewModel
 import com.example.mp3player.viewmodel.MainViewModel
+import com.example.mp3player.viewmodel.SettingsViewModel
+import com.example.mp3player.viewmodel.TranscriptViewModel
+import com.example.mp3player.viewmodel.TrimViewModel
+import kotlinx.coroutines.flow.collectLatest
 
 /**
- * 主容器页面：基于 HorizontalPager 支持 音乐库-文稿-剪辑-裁剪-格式转换-设置 六屏左右滑动平滑切换
- * 同时集成底部导航栏双向实时联动
+ * 主界面：六屏左右滑动切换 + 底部导航栏 + 浮动播放栏
+ *
+ * ViewModel 绑定策略：
+ * - 所有 ViewModel 由 MainActivity 通过 ViewModelFactory 创建，Activity 级共享
+ * - MainViewModel：导航、主播放器、全局状态
+ * - 各子 ViewModel：对应界面的专属业务逻辑
  */
 @Composable
 fun MainScreen(
-    viewModel: MainViewModel,
-    modifier: Modifier = Modifier
+    mainViewModel: MainViewModel,
+    audioLibraryViewModel: AudioLibraryViewModel,
+    transcriptViewModel: TranscriptViewModel,
+    clipViewModel: ClipViewModel,
+    trimViewModel: TrimViewModel,
+    convertViewModel: ConvertViewModel,
+    settingsViewModel: SettingsViewModel
 ) {
     val context = LocalContext.current
-    val currentScreen by viewModel.currentScreen.collectAsState()
-    // 裁剪页（第4页）向左滑动不再进入系统设置，系统设置改为覆盖层展示
     val pagerState = rememberPagerState(
-        initialPage = currentScreen.pageIndex.coerceAtMost(4),
-        pageCount = { 5 }
+        initialPage = AppScreen.AUDIO_LIBRARY.pageIndex,
+        pageCount = { 6 }
     )
 
-    // 监听全局 Toast 事件
+    val currentScreen by mainViewModel.currentScreen.collectAsStateWithLifecycle()
+    val currentAudio by mainViewModel.currentPlayingAudio.collectAsStateWithLifecycle()
+    val isPlaying by mainViewModel.isPlaying.collectAsStateWithLifecycle()
+    val currentPositionMs by mainViewModel.currentPositionMs.collectAsStateWithLifecycle()
+    val durationMs by mainViewModel.durationMs.collectAsStateWithLifecycle()
+
+    // 全局 Toast
     LaunchedEffect(Unit) {
-        viewModel.toastEvent.collect { message ->
-            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        mainViewModel.toastEvent.collectLatest { msg ->
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
     }
 
-    // 监听外部跳转目标页面事件（系统设置不在 Pager 中，需过滤掉其目标页索引）
+    // 页面跳转联动
     LaunchedEffect(Unit) {
-        viewModel.targetPage.collect { targetPage ->
-            if (targetPage < 5 && pagerState.currentPage != targetPage) {
-                pagerState.scrollToPage(targetPage)
+        mainViewModel.targetPage.collectLatest { page ->
+            if (pagerState.currentPage != page) {
+                pagerState.animateScrollToPage(page)
             }
         }
     }
@@ -49,41 +75,80 @@ fun MainScreen(
     // 监听滑动切换并同步到 ViewModel
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.currentPage }.collect { page ->
-            viewModel.onPageScrolled(page)
+            mainViewModel.onPageScrolled(page)
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize(),
-            beyondViewportPageCount = 1
-        ) { page ->
-            when (page) {
-                0 -> AudioLibraryScreen(viewModel = viewModel)
-                1 -> TranscriptScreen(viewModel = viewModel)
-                2 -> ClipScreen(viewModel = viewModel)
-                3 -> TrimScreen(viewModel = viewModel)
-                4 -> ConvertScreen(viewModel = viewModel)
-            }
+    // 音频库加载完成后恢复播放状态
+    LaunchedEffect(audioLibraryViewModel.allAudios.value.isNotEmpty()) {
+        if (audioLibraryViewModel.allAudios.value.isNotEmpty()) {
+            mainViewModel.loadLastPlaybackState(audioLibraryViewModel.allAudios.value)
         }
+    }
 
-        // 系统设置覆盖层：仅通过右上角齿轮进入，不参与左右滑动
-        if (currentScreen == AppScreen.SETTINGS) {
-            SettingsScreen(
-                viewModel = viewModel,
-                onBack = { viewModel.navigateTo(AppScreen.AUDIO_LIBRARY) },
-                modifier = Modifier.fillMaxSize()
+    Scaffold(
+        bottomBar = {
+            BottomNavBar(
+                currentScreen = currentScreen,
+                onNavigate = { screen -> mainViewModel.navigateTo(screen) }
             )
         }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                beyondViewportPageCount = 1
+            ) { page ->
+                when (page) {
+                    0 -> AudioLibraryScreen(
+                        mainViewModel = mainViewModel,
+                        viewModel = audioLibraryViewModel
+                    )
+                    1 -> TranscriptScreen(
+                        mainViewModel = mainViewModel,
+                        transcriptViewModel = transcriptViewModel,
+                        clipViewModel = clipViewModel
+                    )
+                    2 -> ClipScreen(
+                        mainViewModel = mainViewModel,
+                        clipViewModel = clipViewModel
+                    )
+                    3 -> TrimScreen(
+                        mainViewModel = mainViewModel,
+                        trimViewModel = trimViewModel
+                    )
+                    4 -> ConvertScreen(
+                        mainViewModel = mainViewModel,
+                        convertViewModel = convertViewModel
+                    )
+                    5 -> SettingsScreen(
+                        mainViewModel = mainViewModel,
+                        settingsViewModel = settingsViewModel,
+                        onBack = { mainViewModel.navigateTo(AppScreen.AUDIO_LIBRARY) }
+                    )
+                }
+            }
 
-        // 底部常驻导航栏
-        BottomNavBar(
-            currentScreen = currentScreen,
-            onNavigate = { screen ->
-                viewModel.navigateTo(screen)
-            },
-            modifier = Modifier.align(Alignment.BottomCenter)
-        )
+            // 浮动播放栏
+            FloatingPlayerBar(
+                currentAudio = currentAudio,
+                isPlaying = isPlaying,
+                currentPositionMs = currentPositionMs,
+                durationMs = durationMs,
+                onTogglePlayPause = { mainViewModel.toggleMainPlayPause() },
+                onFastForward5s = { mainViewModel.mainFastForwardOrRewind(5) },
+                onRewind5s = { mainViewModel.mainFastForwardOrRewind(-5) },
+                onPlayPrevious = { mainViewModel.playMainPrevious() },
+                onPlayNext = { mainViewModel.playMainNext() },
+                onClickBar = { mainViewModel.navigateTo(AppScreen.TRANSCRIPT) },
+                onSeekTo = { mainViewModel.mainSeekTo(it) },
+                modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter)
+            )
+        }
     }
 }

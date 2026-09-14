@@ -1,4 +1,4 @@
-package com.example.mp3player.ui.components
+﻿package com.example.mp3player.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,14 +23,14 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.mp3player.data.model.AudioItem
 import com.example.mp3player.ui.theme.*
-import com.example.mp3player.viewmodel.MainViewModel
+import com.example.mp3player.viewmodel.AudioLibraryViewModel
 
 /**
  * 扫描本地文件并选择导入的对话框
  */
 @Composable
 fun ScanImportDialog(
-    viewModel: MainViewModel,
+    viewModel: AudioLibraryViewModel,
     onDismiss: () -> Unit
 ) {
     val deviceAudios by viewModel.deviceAudios.collectAsState()

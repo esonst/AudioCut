@@ -1,4 +1,4 @@
-package com.example.mp3player.ui.screens
+﻿package com.example.mp3player.ui.screens
 
 import android.Manifest
 import android.content.Context
@@ -38,7 +38,8 @@ import com.example.mp3player.ui.components.ScanImportDialog
 import com.example.mp3player.ui.components.drawVerticalScrollbar
 import com.example.mp3player.ui.theme.*
 import com.example.mp3player.utils.RingtoneHelper
-import com.example.mp3player.viewmodel.AppScreen
+import com.example.mp3player.navigation.AppScreen
+import com.example.mp3player.viewmodel.AudioLibraryViewModel
 import com.example.mp3player.viewmodel.MainViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
@@ -50,10 +51,7 @@ import kotlin.time.Duration.Companion.milliseconds
  */
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
-fun AudioLibraryScreen(
-    viewModel: MainViewModel,
-    modifier: Modifier = Modifier
-) {
+fun AudioLibraryScreen(mainViewModel: MainViewModel, viewModel: AudioLibraryViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val displayAudios by viewModel.displayAudios.collectAsState()
     val browseMode by viewModel.browseMode.collectAsState()
@@ -222,7 +220,7 @@ fun AudioLibraryScreen(
                             }
                         }
                         IconButton(onClick = {
-                            viewModel.navigateTo(AppScreen.SETTINGS)
+                            mainViewModel.navigateTo(AppScreen.SETTINGS)
                         }) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings", tint = PrimaryDark)
                         }
@@ -439,13 +437,13 @@ fun AudioLibraryScreen(
             isPlaying = isPlaying,
             currentPositionMs = currentPositionMs,
             durationMs = durationMs,
-            onTogglePlayPause = { viewModel.toggleMainPlayPause() },
-            onFastForward5s = { viewModel.mainFastForwardOrRewind(5) },
-            onRewind5s = { viewModel.mainFastForwardOrRewind(-5) },
-            onPlayPrevious = { viewModel.playMainPrevious() },
-            onPlayNext = { viewModel.playMainNext() },
-            onSeekTo = { viewModel.mainSeekTo(it) },
-            onClickBar = { viewModel.navigateTo(AppScreen.TRANSCRIPT) },
+            onTogglePlayPause = { mainViewModel.toggleMainPlayPause() },
+            onFastForward5s = { mainViewModel.mainFastForwardOrRewind(5) },
+            onRewind5s = { mainViewModel.mainFastForwardOrRewind(-5) },
+            onPlayPrevious = { mainViewModel.playMainPrevious() },
+            onPlayNext = { mainViewModel.playMainNext() },
+            onSeekTo = { mainViewModel.mainSeekTo(it) },
+            onClickBar = { mainViewModel.navigateTo(AppScreen.TRANSCRIPT) },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(horizontal = 16.dp, vertical = 80.dp)

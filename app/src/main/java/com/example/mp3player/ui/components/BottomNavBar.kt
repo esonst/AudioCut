@@ -1,4 +1,4 @@
-package com.example.mp3player.ui.components
+﻿package com.example.mp3player.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mp3player.ui.theme.PrimaryLight
 import com.example.mp3player.ui.theme.TextMuted
-import com.example.mp3player.viewmodel.AppScreen
+import com.example.mp3player.navigation.AppScreen
 
 /**
  * 底部导航栏：音频库、文稿、剪辑、裁剪、格式转换 五大页面

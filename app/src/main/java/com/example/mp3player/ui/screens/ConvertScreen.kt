@@ -1,4 +1,4 @@
-package com.example.mp3player.ui.screens
+﻿package com.example.mp3player.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -25,22 +25,20 @@ import com.example.mp3player.data.model.ConvertQuality
 import com.example.mp3player.ui.components.ConversionProgressView
 import com.example.mp3player.ui.theme.*
 import com.example.mp3player.viewmodel.MainViewModel
+import com.example.mp3player.viewmodel.ConvertViewModel
 
 /**
  * 格式转换界面
  */
 @Composable
-fun ConvertScreen(
-    viewModel: MainViewModel,
-    modifier: Modifier = Modifier
-) {
+fun ConvertScreen(mainViewModel: MainViewModel, convertViewModel: ConvertViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val currentAudio by viewModel.currentPlayingAudio.collectAsState()
-    val isPlaying by viewModel.isPlaying.collectAsState()
-    val currentPositionMs by viewModel.currentPositionMs.collectAsState()
-    val durationMs by viewModel.durationMs.collectAsState()
-    val convertState by viewModel.convertState.collectAsState()
-    val convertInputFile by viewModel.convertInputFile.collectAsState()
+    val currentAudio by mainViewModel.currentPlayingAudio.collectAsState()
+    val isPlaying by mainViewModel.isPlaying.collectAsState()
+    val currentPositionMs by mainViewModel.currentPositionMs.collectAsState()
+    val durationMs by mainViewModel.durationMs.collectAsState()
+    val convertState by convertViewModel.convertState.collectAsState()
+    val convertInputFile by convertViewModel.convertInputFile.collectAsState()
 
     var selectedQuality by remember { mutableStateOf(ConvertQuality.HIGH) }
     var showInputFileSelection by remember { mutableStateOf(false) }
@@ -89,7 +87,7 @@ fun ConvertScreen(
             if (convertState.isConverting) {
                 // 转换中显示【停止】按钮
                 TextButton(
-                    onClick = { viewModel.cancelConversion() },
+                    onClick = { convertViewModel.cancelConversion() },
                     colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFDC2626))
                 ) {
                     Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -103,7 +101,7 @@ fun ConvertScreen(
                         if (convertInputFile == null && currentAudio == null) {
                             Toast.makeText(context, "请先选择输入文件", Toast.LENGTH_SHORT).show()
                         } else {
-                            viewModel.startConversion(selectedQuality, customFileName = effectiveOutputName)
+                            convertViewModel.startConversion(selectedQuality, customFileName = effectiveOutputName)
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryLight),
@@ -317,7 +315,7 @@ fun ConvertScreen(
 //                        Toast.makeText(context, "预览功能开发中", Toast.LENGTH_SHORT).show()
 //                    } else if (currentAudio != null) {
 //                        // 播放当前音频
-//                        viewModel.playAudio(currentAudio!!)
+//                        mainViewModel.playAudio(currentAudio!!)
 //                    }
 //                },
 //                enabled = convertInputFile != null || currentAudio != null,
@@ -400,7 +398,7 @@ fun ConvertScreen(
                         // 保存按钮
                         OutlinedButton(
                             onClick = {
-                                viewModel.saveConvertedToLibrary(context)
+                                convertViewModel.saveConvertedToLibrary()
                             },
                             modifier = Modifier
                                 .weight(1f)
@@ -417,7 +415,7 @@ fun ConvertScreen(
                         // 分享按钮
                         Button(
                             onClick = {
-                                viewModel.shareConvertedFile(context)
+                                convertViewModel.shareConvertedFile(context)
                             },
                             modifier = Modifier
                                 .weight(1f)
@@ -502,7 +500,7 @@ fun ConvertScreen(
                     TextButton(
                         onClick = {
                             // 使用预览文件
-                            viewModel.navigateToConvertFormat(convertInputFile)
+                            mainViewModel.navigateToConvertFormat(convertInputFile)
                             showInputFileSelection = false
                         }
                     ) {
@@ -514,7 +512,7 @@ fun ConvertScreen(
                             // 使用当前播放音频
                             val inputFile = currentAudio?.filePath
                             if (inputFile != null) {
-                                viewModel.navigateToConvertFormat(inputFile)
+                                mainViewModel.navigateToConvertFormat(inputFile)
                             }
                             showInputFileSelection = false
                         }
@@ -525,7 +523,7 @@ fun ConvertScreen(
                     TextButton(
                         onClick = {
                             // 返回音频库选择
-                            viewModel.navigateTo(com.example.mp3player.viewmodel.AppScreen.AUDIO_LIBRARY)
+                            mainViewModel.navigateTo(com.example.mp3player.navigation.AppScreen.AUDIO_LIBRARY)
                             showInputFileSelection = false
                         }
                     ) {

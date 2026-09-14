@@ -1,4 +1,4 @@
-package com.example.mp3player.ui.screens
+﻿package com.example.mp3player.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -28,8 +28,9 @@ import androidx.compose.ui.unit.sp
 import com.example.mp3player.data.model.AudioItem
 import com.example.mp3player.data.model.AudioSegment
 import com.example.mp3player.ui.theme.*
-import com.example.mp3player.viewmodel.AppScreen
+import com.example.mp3player.navigation.AppScreen
 import com.example.mp3player.viewmodel.MainViewModel
+import com.example.mp3player.viewmodel.TrimViewModel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -42,27 +43,24 @@ import kotlin.time.Duration.Companion.milliseconds
  * 提供 覆盖原文件 / 另存为 / 分享 三种导出方式
  */
 @Composable
-fun TrimScreen(
-    viewModel: MainViewModel,
-    modifier: Modifier = Modifier
-) {
-    val currentAudio by viewModel.currentPlayingAudio.collectAsState()
-    val durationMs by viewModel.durationMs.collectAsState()
-    val currentPositionMs by viewModel.currentPositionMs.collectAsState()
-    val trimRanges by viewModel.trimRanges.collectAsState()
-    val previewingTrimId by viewModel.previewingSegmentId.collectAsState()
-    val isPlaying by viewModel.isPlaying.collectAsState()
+fun TrimScreen(mainViewModel: MainViewModel, trimViewModel: TrimViewModel, modifier: Modifier = Modifier) {
+    val currentAudio by mainViewModel.currentPlayingAudio.collectAsState()
+    val durationMs by mainViewModel.durationMs.collectAsState()
+    val currentPositionMs by mainViewModel.currentPositionMs.collectAsState()
+    val trimRanges by trimViewModel.trimRanges.collectAsState()
+    val previewingTrimId by trimViewModel.previewingSegmentId.collectAsState()
+    val isPlaying by mainViewModel.isPlaying.collectAsState()
 
     // 裁剪预览状态
-    val isGeneratingTrimPreview by viewModel.isGeneratingTrimPreview.collectAsState()
-    val trimPreviewResult by viewModel.trimPreviewResult.collectAsState()
-    val isPreviewPlaying by viewModel.isMergedPreviewPlaying.collectAsState()
-    val previewPositionMs by viewModel.mergedPreviewPositionMs.collectAsState()
-    val previewDurationMs by viewModel.mergedPreviewDurationMs.collectAsState()
+    val isGeneratingTrimPreview by trimViewModel.isGeneratingTrimPreview.collectAsState()
+    val trimPreviewResult by trimViewModel.trimPreviewResult.collectAsState()
+    val isPreviewPlaying by trimViewModel.isMergedPreviewPlaying.collectAsState()
+    val previewPositionMs by trimViewModel.mergedPreviewPositionMs.collectAsState()
+    val previewDurationMs by trimViewModel.mergedPreviewDurationMs.collectAsState()
 
     // 裁剪导出状态
-    val isTrimExporting by viewModel.isTrimExporting.collectAsState()
-    val trimExportProgress by viewModel.trimExportProgress.collectAsState()
+    val isTrimExporting by trimViewModel.isTrimExporting.collectAsState()
+    val trimExportProgress by trimViewModel.trimExportProgress.collectAsState()
 
     val totalDuration = if (durationMs > 0) durationMs else currentAudio?.durationMs ?: 0L
 
@@ -93,7 +91,7 @@ fun TrimScreen(
 
             // 右上角【裁剪】按钮：点击执行裁剪预览
             OutlinedButton(
-                onClick = { viewModel.startOrToggleTrimPreview() },
+                onClick = { trimViewModel.startOrToggleTrimPreview() },
                 enabled = !isGeneratingTrimPreview && !isTrimExporting,
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = TrimRed),
@@ -176,7 +174,7 @@ fun TrimScreen(
                                 ) {
                                     Button(
                                         onClick = {
-                                            viewModel.navigateTo(AppScreen.TRANSCRIPT)
+                                            mainViewModel.navigateTo(AppScreen.TRANSCRIPT)
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = TrimRed),
                                         shape = RoundedCornerShape(10.dp)
@@ -187,7 +185,7 @@ fun TrimScreen(
                                     }
 
                                     // 空白状态下的新增裁剪卡片按钮：在当前播放位置创建裁剪卡片
-                                    IconButton(onClick = { viewModel.createManualTrimAtCurrentPos() }) {
+                                    IconButton(onClick = { trimViewModel.createManualTrimAtCurrentPos() }) {
                                         Icon(Icons.Default.AddCircleOutline, contentDescription = "新建裁剪卡片", tint = TrimRed)
                                     }
                                 }
@@ -207,16 +205,16 @@ fun TrimScreen(
                             previewDurationMs = previewDurationMs,
                             isTrimExporting = isTrimExporting,
                             trimExportProgress = trimExportProgress,
-                            onStartOrTogglePreview = { viewModel.startOrToggleTrimPreview() },
-                            onSeekPreview = { viewModel.seekMergedPreview(it) },
-                            onRewindPreview = { viewModel.rewindMergedPreview(it) },
-                            onClosePreview = { viewModel.closeTrimPreview() },
-                            onOverwriteOriginal = { viewModel.overwriteOriginalWithTrim() },
-                            onSaveAs = { viewModel.saveTrimAs(it) },
-                            onShare = { viewModel.exportTrimAndShare() },
+                            onStartOrTogglePreview = { trimViewModel.startOrToggleTrimPreview() },
+                            onSeekPreview = { trimViewModel.seekMergedPreview(it) },
+                            onRewindPreview = { trimViewModel.rewindMergedPreview(it) },
+                            onClosePreview = { trimViewModel.closeTrimPreview() },
+                            onOverwriteOriginal = { trimViewModel.overwriteOriginalWithTrim() },
+                            onSaveAs = { trimViewModel.saveTrimAs(it) },
+                            onShare = { trimViewModel.exportTrimAndShare() },
                             onConvertFormat = { 
                                 val path = trimPreviewResult?.takeIf { it.isSuccess }?.outputPath?.takeIf { it.isNotEmpty() }
-                                viewModel.navigateToConvertFormat(path)
+                                mainViewModel.navigateToConvertFormat(path)
                             }
                         )
                     }
@@ -229,14 +227,14 @@ fun TrimScreen(
                             trim = trim,
                             maxDurationMs = totalDuration,
                             isCurrentlyPreviewing = previewingTrimId == trim.id && isPlaying,
-                            onToggleSelect = { viewModel.toggleTrimSelected(trim.id) },
-                            onUpdateRange = { start, end -> viewModel.updateTrimRange(trim.id, start, end) },
-                            onPreview = { viewModel.previewTrimRange(trim) },
+                            onToggleSelect = { trimViewModel.toggleTrimSelected(trim.id) },
+                            onUpdateRange = { start, end -> trimViewModel.updateTrimRange(trim.id, start, end) },
+                            onPreview = { trimViewModel.previewTrimRange(trim) },
                             onRenameClick = {
                                 renameText = trim.title
                                 showRenameDialog = true
                             },
-                            onDelete = { viewModel.deleteTrimRange(trim.id) }
+                            onDelete = { trimViewModel.deleteTrimRange(trim.id) }
                         )
 
                         if (showRenameDialog) {
@@ -246,7 +244,7 @@ fun TrimScreen(
                                 text = { OutlinedTextField(value = renameText, onValueChange = { renameText = it }, singleLine = true) },
                                 confirmButton = {
                                     Button(onClick = {
-                                        viewModel.renameTrimRange(trim.id, renameText)
+                                        trimViewModel.renameTrimRange(trim.id, renameText)
                                         showRenameDialog = false
                                     }) { Text("确定") }
                                 },
@@ -258,7 +256,7 @@ fun TrimScreen(
                     // 新增裁剪卡片按钮：放在裁剪卡片列表下方
                     item {
                         OutlinedButton(
-                            onClick = { viewModel.createManualTrimAtCurrentPos() },
+                            onClick = { trimViewModel.createManualTrimAtCurrentPos() },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = TrimRed)
