@@ -14,8 +14,6 @@ data class AsrConfig(
     val useSlicing: Boolean = true,
     /** 分块目标时长（秒） */
     val chunkSeconds: Int = 30,
-    /** 是否启用智能分句（punct-ct 模型加标点；关闭则按停顿机械分句） */
-    val useSmartPunctuation: Boolean = false,
     /** 识别线程数 */
     val asrThreads: Int = 2
 ) {

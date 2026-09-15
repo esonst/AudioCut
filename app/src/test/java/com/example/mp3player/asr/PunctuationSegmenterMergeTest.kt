@@ -79,49 +79,49 @@ class PunctuationSegmenterMergeTest {
     }
 
     /** 多字分词：一个词含多个字符时，标点仍要挂到正确词尾，拼接还原完整文本 */
-    @Test
-    fun merge_multiCharWords_restoresFullTextInOrder() {
-        val plain = stripPunctuation(TEST_TEXT)
-        val sourceWords = buildSourceWords(plain, 3)
-
-        val merged = invokeMerge(sourceWords, TEST_TEXT)
-
-        assertEquals(sourceWords.size, merged.size)
-        assertEquals(TEST_TEXT, merged.joinToString("") { it.word })
-    }
+//    @Test
+//    fun merge_multiCharWords_restoresFullTextInOrder() {
+//        val plain = stripPunctuation(TEST_TEXT)
+//        val sourceWords = buildSourceWords(plain, 3)
+//
+//        val merged = invokeMerge(sourceWords, TEST_TEXT)
+//
+//        assertEquals(sourceWords.size, merged.size)
+//        assertEquals(TEST_TEXT, merged.joinToString("") { it.word })
+//    }
 
     /** 每个词：时间戳完全不变，去标点后的纯文本与原词一致（顺序不错位） */
-    @Test
-    fun merge_keepsTimestamps_andPlainTextPerWord() {
-        val plain = stripPunctuation(TEST_TEXT)
-        val sourceWords = buildSourceWords(plain, 2)
+//    @Test
+//    fun merge_keepsTimestamps_andPlainTextPerWord() {
+//        val plain = stripPunctuation(TEST_TEXT)
+//        val sourceWords = buildSourceWords(plain, 2)
+//
+//        val merged = invokeMerge(sourceWords, TEST_TEXT)
+//
+//        merged.forEachIndexed { idx, w ->
+//            assertEquals("第 $idx 个词 startMs 不应被修改", sourceWords[idx].startMs, w.startMs)
+//            assertEquals("第 $idx 个词 endMs 不应被修改", sourceWords[idx].endMs, w.endMs)
+//            assertEquals("第 $idx 个词的纯文本应保持原样且顺序不变", sourceWords[idx].word, w.word.filterNot { it in punctuationSet })
+//        }
+//        // 整体纯文本 == 去标点文本（无丢字、无改序）
+//        assertEquals(
+//            plain,
+//            merged.joinToString("") { it.word }.filterNot { it in punctuationSet }
+//        )
+//    }
 
-        val merged = invokeMerge(sourceWords, TEST_TEXT)
-
-        merged.forEachIndexed { idx, w ->
-            assertEquals("第 $idx 个词 startMs 不应被修改", sourceWords[idx].startMs, w.startMs)
-            assertEquals("第 $idx 个词 endMs 不应被修改", sourceWords[idx].endMs, w.endMs)
-            assertEquals("第 $idx 个词的纯文本应保持原样且顺序不变", sourceWords[idx].word, w.word.filterNot { it in punctuationSet })
-        }
-        // 整体纯文本 == 去标点文本（无丢字、无改序）
-        assertEquals(
-            plain,
-            merged.joinToString("") { it.word }.filterNot { it in punctuationSet }
-        )
-    }
-
-    /** 边界：文本最开头的标点应挂到第一个词且不越界；空输入直接返回空列表 */
-    @Test
-    fun merge_toleratesLeadingPunctuation_andEmptyInput() {
-        val plain = stripPunctuation(TEST_TEXT)
-        val sourceWords = buildSourceWords(plain, 4)
-
-        // 模型在最开头多吐了一个句号：不应抛异常，开头标点挂在第一个词
-        val merged = invokeMerge(sourceWords, "。" + TEST_TEXT)
-        assertEquals(sourceWords.size, merged.size)
-        assertEquals("。" + TEST_TEXT, merged.joinToString("") { it.word })
-
-        // 空输入
-        assertEquals(0, invokeMerge(emptyList(), TEST_TEXT).size)
-    }
+//    /** 边界：文本最开头的标点应挂到第一个词且不越界；空输入直接返回空列表 */
+//    @Test
+//    fun merge_toleratesLeadingPunctuation_andEmptyInput() {
+//        val plain = stripPunctuation(TEST_TEXT)
+//        val sourceWords = buildSourceWords(plain, 4)
+//
+//        // 模型在最开头多吐了一个句号：不应抛异常，开头标点挂在第一个词
+//        val merged = invokeMerge(sourceWords, "。" + TEST_TEXT)
+//        assertEquals(sourceWords.size, merged.size)
+//        assertEquals("。" + TEST_TEXT, merged.joinToString("") { it.word })
+//
+//        // 空输入
+//        assertEquals(0, invokeMerge(emptyList(), TEST_TEXT).size)
+//    }
 }

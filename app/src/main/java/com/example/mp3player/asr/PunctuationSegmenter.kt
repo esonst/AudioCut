@@ -38,8 +38,11 @@ class PunctuationSegmenter {
         /** 段落累计最大字符数，遇到句号则分段 */
         private const val PARAGRAPH_MAX_LENGTH = 150
 
-        /** 标点模型单次处理的最大字符数（过长文本分片处理，控制耗时） */
+        /** 标点模型单次处理的最大字符数（过长文本分片处理，控制耗时；排版优化走设置项） */
         private const val PUNCT_CHUNK_CHARS = 300
+
+        /** 排版优化分片的重叠窗口大小（固定 20 字，不可配置），用于保证分片边界标点的上下文连贯 */
+        const val PUNCT_OVERLAP_CHARS = 20
 
         @Volatile
         private var cachedPunct: OfflinePunctuation? = null
@@ -116,35 +119,158 @@ class PunctuationSegmenter {
     }
 
     /**
-     * 为无标点文本添加标点（分片处理）
+     * 为无标点文本添加标点（分片处理，支持重叠窗口）
+     *
+     * @param punct 已加载的标点模型
+     * @param text 无标点文本
+     * @param chunkChars 单次交给模型处理的字符数（单次文本数量）
+     * @param overlapChars 相邻分片的重叠字符数；重叠区由下一片带后续上下文重新标点，
+     *   非末片只保留前 (chunkChars - overlapChars) 个非标点字符，避免分片边界标点割裂
      * @param onLog 处理日志回调
      */
     fun addPunctuation(
         punct: OfflinePunctuation,
         text: String,
+        chunkChars: Int = PUNCT_CHUNK_CHARS,
+        overlapChars: Int = 0,
         onLog: (String) -> Unit = {}
     ): String {
         if (text.isBlank()) return text
+        var totalAdded = 0
+        var lastFailed = false
+        val result = rePunctuateChunked(
+            text = text,
+            chunkChars = chunkChars,
+            overlapChars = overlapChars,
+            punctuate = { chunk ->
+                val punctuated = runCatching { punct.addPunctuation(chunk) }.getOrNull()
+                lastFailed = punctuated == null
+                val output = punctuated ?: chunk
+                totalAdded += output.count { it in allPunctuationSet } - chunk.count { it in allPunctuationSet }
+                output
+            },
+            onChunk = { index, count, chunkLen, outputLen ->
+                onLog("标点分片：第${index}/$count 片 ${chunkLen}字→${outputLen}字" +
+                        if (lastFailed) "（模型调用失败，保留原文）" else "")
+            }
+        )
+        onLog("标点分片：共恢复标点 $totalAdded 个")
+        return result
+    }
+
+    /**
+     * 分片重标点核心循环（纯文本实现，不依赖原生模型，便于单元测试）：
+     * 按 [chunkChars] 字符分片、相邻分片重叠 [overlapChars] 字符，逐片交给 [punctuate] 处理；
+     * 非末片只保留前 (片长 - 重叠) 个非标点字符（重叠区由下一片带上下文重新标点），末片全量保留。
+     *
+     * @param onChunk 每片处理完成回调：分片序号、总分片数、输入长度、输出长度
+     */
+    internal fun rePunctuateChunked(
+        text: String,
+        chunkChars: Int,
+        overlapChars: Int,
+        punctuate: (String) -> String,
+        onChunk: (index: Int, count: Int, chunkLen: Int, outputLen: Int) -> Unit = { _, _, _, _ -> }
+    ): String {
+        val chunkSize = chunkChars.coerceAtLeast(1)
+        val overlap = overlapChars.coerceIn(0, chunkSize - 1)
+        val step = (chunkSize - overlap).coerceAtLeast(1)
+        val count = if (text.length <= chunkSize) 1 else (text.length - chunkSize + step - 1) / step + 1
         val sb = StringBuilder(text.length + text.length / 10)
         var start = 0
-        var chunkIndex = 0
-        var totalAdded = 0
-        val totalChunks = (text.length + PUNCT_CHUNK_CHARS - 1) / PUNCT_CHUNK_CHARS
+        var index = 0
         while (start < text.length) {
-            chunkIndex++
-            val end = minOf(start + PUNCT_CHUNK_CHARS, text.length)
+            index++
+            val end = minOf(start + chunkSize, text.length)
             val chunk = text.substring(start, end)
-            val punctuated = runCatching { punct.addPunctuation(chunk) }.getOrNull()
-            val output = punctuated ?: chunk
-            val added = output.count { it in allPunctuationSet } - chunk.count { it in allPunctuationSet }
-            totalAdded += added
-            onLog("智能分句：第${chunkIndex}/${totalChunks}片 ${chunk.length}字→${output.length}字，新增标点 $added 个" +
-                    if (punctuated == null) "（模型调用失败，保留原文）" else "")
-            sb.append(output)
-            start = end
+            val output = punctuate(chunk)
+            onChunk(index, count, chunk.length, output.length)
+            if (end >= text.length) {
+                // 末片：全量保留后结束，不再回退（避免重叠回退造成死循环）
+                sb.append(output)
+                break
+            } else {
+                appendWindowPrefix(sb, output, (chunk.length - overlap).coerceAtLeast(1))
+                start = end - overlap
+            }
         }
-        onLog("智能分句：共恢复标点 $totalAdded 个")
         return sb.toString()
+    }
+
+    /**
+     * 把一片模型的标点输出追加到 [sb]：只保留前 [keepPlainChars] 个非标点字符（及其前面的标点），
+     * 超出部分（重叠区）丢弃，由下一分片重新标点。
+     */
+    private fun appendWindowPrefix(sb: StringBuilder, output: String, keepPlainChars: Int) {
+        var keptPlain = 0
+        for (c in output) {
+            if (keptPlain >= keepPlainChars) break
+            sb.append(c)
+            if (c !in allPunctuationSet) keptPlain++
+        }
+    }
+
+    // ========== 排版优化 ==========
+    /**
+     * 排版优化：删除文稿中的全部标点 → 用 punct 模型重新添加标点 → 按句末标点分句。
+     *
+     * 与识别期的智能分句不同，本方法面向「已完成识别（机械分句）的文稿」二次精排：
+     * - 分片参数可配置：单次文本数量 [chunkChars]（默认 1000 字），重叠窗口 [overlapChars]（默认 20 字）
+     * - 词语的时间戳完全沿用原值，只改写 word 文本（标点归属）
+     *
+     * @return 重新标点后按句末标点切分得到的句子列表
+     */
+    fun rePunctuate(
+        words: List<TranscriptWord>,
+        punct: OfflinePunctuation,
+        chunkChars: Int = 1000,
+        overlapChars: Int = PUNCT_OVERLAP_CHARS,
+        onLog: (String) -> Unit = {}
+    ): List<TranscriptSentence> {
+        val cleaned = stripAllPunctuation(words)
+        if (cleaned.isEmpty()) return emptyList()
+
+        val plain = cleaned.joinToString("") { it.word }.replace(Regex("\\s+"), "")
+        if (plain.isBlank()) return emptyList()
+
+        onLog("排版优化：输入 ${words.size} 词 / ${plain.length} 字，删除全部旧标点后重新添加")
+        val punctuated = addPunctuation(punct, plain, chunkChars, overlapChars, onLog)
+        val merged = mergePunctuationToWordsFixed(cleaned, punctuated)
+        if (merged.isEmpty()) return emptyList()
+
+        val sentences = mutableListOf<TranscriptSentence>()
+        val current = mutableListOf<TranscriptWord>()
+
+        for (w in merged) {
+            current.add(w)
+            if (w.word.lastOrNull() in endPunctuationSet) {
+                sentences.add(
+                    TranscriptSentence(
+                        id = sentences.size.toLong(),
+                        text = current.joinToString("") { it.word },
+                        startMs = current.first().startMs,
+                        endMs = current.last().endMs,
+                        words = current.toList()
+                    )
+                )
+                current.clear()
+            }
+        }
+
+        // 末尾未闭合句子（模型未给句末标点）强制成句
+        if (current.isNotEmpty()) {
+            sentences.add(
+                TranscriptSentence(
+                    id = sentences.size.toLong(),
+                    text = current.joinToString("") { it.word },
+                    startMs = current.first().startMs,
+                    endMs = current.last().endMs,
+                    words = current.toList()
+                )
+            )
+        }
+        onLog("排版优化：完成，共 ${sentences.size} 句")
+        return sentences
     }
 
     // ========== 分句 ==========
@@ -189,7 +315,7 @@ class PunctuationSegmenter {
         if (plain.isBlank()) return emptyList()
 
         onLog("智能分句：输入 ${words.size} 词 / ${plain.length} 字，开始恢复标点")
-        val punctuated = addPunctuation(punct, plain, onLog)
+        val punctuated = addPunctuation(punct, plain, onLog = onLog)
         val merged = mergePunctuationToWordsFixed(cleaned, punctuated)
         if (merged.isEmpty()) return emptyList()
 
@@ -340,6 +466,20 @@ class PunctuationSegmenter {
             }
             if (text.isBlank()) continue
             result.add(w.copy(word = text))
+        }
+        return result
+    }
+
+    /**
+     * 删除词语中的全部标点（排版优化用：机械分句会在词尾追加标点，需整体清掉后重新添加）。
+     * 纯标点词直接丢弃，时间戳保留。
+     */
+    private fun stripAllPunctuation(words: List<TranscriptWord>): List<TranscriptWord> {
+        val result = mutableListOf<TranscriptWord>()
+        for (w in words) {
+            val stripped = w.word.filter { it !in allPunctuationSet }
+            if (stripped.isBlank()) continue
+            result.add(w.copy(word = stripped))
         }
         return result
     }

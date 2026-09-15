@@ -78,4 +78,12 @@ class AppEventBus {
     fun notifyAudioOverwritten(audioId: Long, filePath: String) {
         _audioOverwritten.tryEmit(AudioOverwrittenEvent(audioId, filePath))
     }
+
+    // ==================== 排版优化开关变化事件 ====================
+    private val _layoutOptimizationEnabledChanged = MutableSharedFlow<Boolean>(extraBufferCapacity = 1)
+    val layoutOptimizationEnabledChanged: SharedFlow<Boolean> = _layoutOptimizationEnabledChanged.asSharedFlow()
+
+    fun notifyLayoutOptimizationEnabledChanged(enabled: Boolean) {
+        _layoutOptimizationEnabledChanged.tryEmit(enabled)
+    }
 }

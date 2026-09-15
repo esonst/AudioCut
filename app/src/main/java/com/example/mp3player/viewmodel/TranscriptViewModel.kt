@@ -7,18 +7,23 @@ import com.example.mp3player.asr.AsrConfig
 import com.example.mp3player.asr.AsrManager
 import com.example.mp3player.asr.ModelInstallCoordinator
 import com.example.mp3player.asr.ModelManager
+import com.example.mp3player.asr.PunctuationSegmenter
 import com.example.mp3player.core.AppEventBus
 import com.example.mp3player.data.model.AudioSegment
 import com.example.mp3player.data.model.TranscriptResult
 import com.example.mp3player.data.model.TranscriptWord
+import com.example.mp3player.data.model.formatTranscriptTimestamp
+import com.example.mp3player.data.model.transcriptTimestampLineLength
 import com.example.mp3player.data.repository.PreferencesRepository
 import com.example.mp3player.player.AudioPlayerManager
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 文稿界面 ViewModel
@@ -52,6 +57,16 @@ class TranscriptViewModel(
     private val _asrProgressText = MutableStateFlow("")
     val asrProgressText: StateFlow<String> = _asrProgressText.asStateFlow()
     private var asrJob: Job? = null
+
+    // ==================== 排版优化开关（与设置页同步） ====================
+    private val _layoutOptimizationEnabled = MutableStateFlow(prefs.getEnableLayoutOptimization())
+    val layoutOptimizationEnabled: StateFlow<Boolean> = _layoutOptimizationEnabled.asStateFlow()
+
+    // ==================== 排版优化（punct 模型重标点）状态 ====================
+    private val punctSegmenter = PunctuationSegmenter()
+    private val _isOptimizing = MutableStateFlow(false)
+    val isOptimizing: StateFlow<Boolean> = _isOptimizing.asStateFlow()
+    private var optimizeJob: Job? = null
 
     // ==================== 文稿结果 ====================
     private val _transcriptResult = MutableStateFlow<TranscriptResult?>(null)
@@ -103,6 +118,12 @@ class TranscriptViewModel(
                 }
             }
         }
+        // 设置页切换【开启排版优化】时同步状态（决定文稿页按钮显隐）
+        viewModelScope.launch {
+            eventBus.layoutOptimizationEnabledChanged.collect { enabled ->
+                _layoutOptimizationEnabled.value = enabled
+            }
+        }
     }
 
     fun setSelectedTextRange(range: androidx.compose.ui.text.TextRange?) {
@@ -120,31 +141,46 @@ class TranscriptViewModel(
     }
 
     // ==================== 模型下载 / 导入（从文稿页提示发起） ====================
-    /** 下载缺失的模型（带进度条），完成后自动开始识别 */
+    /**
+     * 下载缺失的模型（带进度条），完成后按模型类型继续：
+     * - 识别模型（SenseVoice）→ 自动开始识别
+     * - 标点模型（punct-ct）→ 自动继续排版优化
+     */
     fun downloadPromptedModel() {
         val type = modelInstallState.value.type ?: return
         viewModelScope.launch {
             val ok = coordinator.download()
             if (ok) {
-                emitToast("模型下载并安装完成，开始识别")
-                launchAsr(currentPlayingAudio.value ?: return@launch, true)
+                emitToast("模型下载并安装完成")
+                continueAfterModelInstall(type)
             } else {
                 emitToast("模型下载失败，可手动下载后导入")
             }
         }
     }
 
-    /** 导入本地模型压缩包（.tar.bz2），完成后自动开始识别 */
+    /**
+     * 导入本地模型压缩包（.tar.bz2），完成后按模型类型继续（同 [downloadPromptedModel]）
+     */
     fun importPromptedModel(uri: Uri) {
         val type = modelInstallState.value.type ?: return
         viewModelScope.launch {
             val ok = coordinator.import(uri)
             if (ok) {
-                emitToast("模型导入完成，开始识别")
-                launchAsr(currentPlayingAudio.value ?: return@launch, true)
+                emitToast("模型导入完成")
+                continueAfterModelInstall(type)
             } else {
                 emitToast("模型导入失败，请选择 .tar.bz2 压缩包")
             }
+        }
+    }
+
+    private fun continueAfterModelInstall(type: ModelManager.ModelType) {
+        when (type) {
+            ModelManager.ModelType.SENSE_VOICE ->
+                launchAsr(currentPlayingAudio.value ?: return, true)
+            ModelManager.ModelType.PUNCT_CT ->
+                optimizeTranscriptLayout()
         }
     }
 
@@ -160,7 +196,6 @@ class TranscriptViewModel(
             vadMaxSpeech = prefs.getVadMaxSpeech(),
             useSlicing = _enableSlicing.value,
             chunkSeconds = _asrChunkSeconds.value,
-            useSmartPunctuation = prefs.getEnableSmartPunct(),
             asrThreads = prefs.getAsrThreads()
         )
     }
@@ -261,6 +296,86 @@ class TranscriptViewModel(
         }
     }
 
+    // ==================== 排版优化 ====================
+    /**
+     * 排版优化：使用 punct-ct 标点模型删除文稿全部标点后重新添加标点，并按句末标点重新分句。
+     *
+     * 流程：
+     * 1. 检查标点模型是否就绪，缺失则弹出下载/导入提示（完成后自动续跑）
+     * 2. 按「设置里的单次文本数量」（默认 1000 字）分片调用模型，
+     *    相邻分片重叠固定 20 字（[PunctuationSegmenter.PUNCT_OVERLAP_CHARS]），保证边界标点上下文连贯
+     * 3. 标点合并回各字词（时间戳不变），重建句子 / 段落 / 全文并持久化
+     */
+    fun optimizeTranscriptLayout() {
+        val current = currentPlayingAudio.value ?: run {
+            emitToast("请先选择播放音频")
+            return
+        }
+        val transcript = _transcriptResult.value ?: run {
+            emitToast("暂无文稿，请先完成语音识别")
+            return
+        }
+        if (transcript.words.isEmpty()) {
+            emitToast("文稿内容为空，无法排版优化")
+            return
+        }
+        if (optimizeJob?.isActive == true) return
+
+        optimizeJob = viewModelScope.launch {
+            try {
+                _isOptimizing.value = true
+                _asrLog.value = emptyList() // 本轮排版日志
+
+                // 1. 标点模型缺失时提示下载/导入（完成后由 download/import 回调续跑本方法）
+                if (!coordinator.checkOrPrompt(ModelManager.ModelType.PUNCT_CT)) return@launch
+
+                // 2. 加载模型并按设置分片重标点
+                val punct = withContext(Dispatchers.Default) {
+                    punctSegmenter.getOrInit(modelManager.punctDir, prefs.getAsrThreads())
+                }
+                if (punct == null) {
+                    emitToast("标点模型加载失败，请检查模型文件")
+                    return@launch
+                }
+
+                val chunkChars = prefs.getPunctChunkChars()
+                val sentences = withContext(Dispatchers.Default) {
+                    punctSegmenter.rePunctuate(
+                        words = transcript.words,
+                        punct = punct,
+                        chunkChars = chunkChars,
+                        overlapChars = PunctuationSegmenter.PUNCT_OVERLAP_CHARS,
+                        onLog = { appendLog(it) }
+                    )
+                }
+                if (sentences.isEmpty()) {
+                    emitToast("排版优化未产生有效句子")
+                    return@launch
+                }
+
+                // 3. 重建段落 / 全文并保存
+                val paragraphs = PunctuationSegmenter.buildParagraphsFromSentences(sentences)
+                val fullText = paragraphs.joinToString("\n\n") { p ->
+                    p.sentences.joinToString("") { it.text }
+                }
+                val result = transcript.copy(
+                    fullText = fullText,
+                    words = sentences.flatMap { it.words },
+                    sentences = sentences,
+                    paragraphs = paragraphs,
+                    isLayoutOptimized = true
+                )
+                _transcriptResult.value = result
+                prefs.saveCachedTranscript(current.id, result)
+                emitToast("排版优化完成：${sentences.size} 句 / ${paragraphs.size} 段")
+            } catch (e: Exception) {
+                emitToast("排版优化失败")
+            } finally {
+                _isOptimizing.value = false
+            }
+        }
+    }
+
     /** 删除当前文稿 */
     fun deleteCurrentTranscript() {
         val current = currentPlayingAudio.value ?: return
@@ -278,15 +393,19 @@ class TranscriptViewModel(
         var endMs = -1L
         var snippet = ""
 
-        for ((_, sentences) in transcript.paragraphs) {
-            for ((_, _, _, _, words) in sentences) {
-                for ((_, word1, startMs1, endMs1) in words) {
+        for (paragraph in transcript.paragraphs) {
+            // 排版优化后段首有 [hh:mm:ss] 时间戳行，索引需跳过
+            if (transcript.isLayoutOptimized) {
+                currentIdx += transcriptTimestampLineLength(paragraph.startMs)
+            }
+            for (sentence in paragraph.sentences) {
+                for (word in sentence.words) {
                     val wordStart = currentIdx
-                    val wordEnd = currentIdx + word1.length
+                    val wordEnd = currentIdx + word.word.length
                     if (start < wordEnd && end > wordStart) {
-                        if (startMs == -1L || startMs1 < startMs) startMs = startMs1
-                        if (endMs == -1L || endMs1 > endMs) endMs = endMs1
-                        if (snippet.length < 30) snippet += word1
+                        if (startMs == -1L || word.startMs < startMs) startMs = word.startMs
+                        if (endMs == -1L || word.endMs > endMs) endMs = word.endMs
+                        if (snippet.length < 30) snippet += word.word
                     }
                     currentIdx = wordEnd
                 }

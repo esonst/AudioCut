@@ -2,7 +2,6 @@ package com.example.mp3player.ui.components
 
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import com.example.mp3player.data.model.TranscriptResult
+import com.example.mp3player.data.model.formatTranscriptTimestamp
+import com.example.mp3player.data.model.transcriptTimestampLineLength
 import com.example.mp3player.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -37,7 +39,13 @@ import kotlinx.coroutines.flow.drop
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * 高性能文稿视图 (v3.1 - 修复选择飘移、拖动期间隐藏悬浮菜单避免干扰手势)
+ * 高性能文稿视图 (v4.0)
+ * - 排版优化后每段开头显示 [hh:mm:ss] 时间戳行（灰色小字样式，复制时自动剔除）
+ * - 播放时自动滚动，保持正在播放的文字始终在可视区域内
+ * - 统一手势：出现选择滑块时单击其它位置仅取消选择（不跳转播放）；
+ *   没有选择滑块时单击文字才跳转播放进度
+ * - 长按选词 / 拖动手柄调整选区期间隐藏悬浮菜单，松手稳定后才显示，
+ *   避免菜单窗口拦截手势导致选区边界乱跳
  */
 @Composable
 fun OptimizedTranscriptView(
@@ -49,11 +57,20 @@ fun OptimizedTranscriptView(
     onCreateSegment: (String) -> Unit,
     modifier: Modifier = Modifier,
     onCreateTrimRange: (String) -> Unit = {},
-    onSelectionDragChanged: (Boolean) -> Unit = {}
+    onSelectionDragChanged: (Boolean) -> Unit = {},
+    isPlaying: Boolean = false
 ) {
+    val showTimestamps = transcriptResult.isLayoutOptimized
+
     val annotatedString = remember(transcriptResult) {
         buildAnnotatedString {
             transcriptResult.paragraphs.forEachIndexed { pIdx, paragraph ->
+                if (showTimestamps) {
+                    withStyle(style = SpanStyle(color = TextSecondary)) {
+                        append(formatTranscriptTimestamp(paragraph.startMs))
+                    }
+                    append("\n")
+                }
                 paragraph.sentences.forEach { sentence ->
                     sentence.words.forEach { word ->
                         append(word.word)
@@ -66,23 +83,24 @@ fun OptimizedTranscriptView(
         }
     }
 
-    // 核心修复：内部自主管理 TextFieldValue，避免外部同步导致的飘移
+    // 内部自主管理 TextFieldValue，避免外部同步导致的飘移
     var textFieldValue by remember(annotatedString) {
         mutableStateOf(TextFieldValue(annotatedString))
     }
-    
-    // 监听外部通知（如清空选区）
-    // 注意：不再通过 externalSelection 参数同步，而是保持内部闭环
 
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
     val scrollState = rememberScrollState()
     val density = LocalDensity.current
+    val viewConfiguration = LocalViewConfiguration.current
 
-    // 预计算所有单词的 TextRange 映射，提升高亮查找性能
+    // 预计算所有单词的 TextRange 映射（已计入时间戳行偏移），提升高亮/点击查找性能
     val wordRangeMap = remember(transcriptResult) {
         val map = mutableMapOf<Long, TextRange>()
         var currentIdx = 0
-        transcriptResult.paragraphs.forEach { paragraph ->
+        transcriptResult.paragraphs.forEachIndexed { pIdx, paragraph ->
+            if (showTimestamps) {
+                currentIdx += transcriptTimestampLineLength(paragraph.startMs)
+            }
             paragraph.sentences.forEach { sentence ->
                 sentence.words.forEach { word ->
                     val start = currentIdx
@@ -91,15 +109,42 @@ fun OptimizedTranscriptView(
                     currentIdx = end
                 }
             }
-            currentIdx += 2 // 段落换行符 \n\n
+            if (pIdx < transcriptResult.paragraphs.size - 1) {
+                currentIdx += 2 // 段落换行符 \n\n
+            }
         }
         map
+    }
+
+    // 词 id → 起始时间（点击跳转播放用）
+    val wordIdToStartMs = remember(transcriptResult) {
+        transcriptResult.words.associate { it.id to it.startMs }
+    }
+
+    // 时间戳行在文本中的区间（复制时剔除，避免拷贝出 [hh:mm:ss]）
+    val timestampRanges = remember(transcriptResult) {
+        val ranges = mutableListOf<TextRange>()
+        if (showTimestamps) {
+            var currentIdx = 0
+            transcriptResult.paragraphs.forEachIndexed { pIdx, paragraph ->
+                val tsLen = transcriptTimestampLineLength(paragraph.startMs)
+                ranges.add(TextRange(currentIdx, currentIdx + tsLen - 1))
+                currentIdx += tsLen
+                paragraph.sentences.forEach { sentence ->
+                    sentence.words.forEach { word -> currentIdx += word.word.length }
+                }
+                if (pIdx < transcriptResult.paragraphs.size - 1) {
+                    currentIdx += 2
+                }
+            }
+        }
+        ranges
     }
 
     val activeWordRange = remember(activeWordId, wordRangeMap) {
         wordRangeMap[activeWordId]
     }
-    
+
     val segmentRanges = remember(wordsInSegmentsIds, wordRangeMap) {
         wordsInSegmentsIds.mapNotNull { id -> wordRangeMap[id] }
     }
@@ -107,24 +152,49 @@ fun OptimizedTranscriptView(
     val clipboardManager = LocalClipboardManager.current
     val selection = textFieldValue.selection
 
-    // 手指是否仍按在文稿上：拖动选择期间隐藏悬浮菜单，抬起后才显示，避免菜单窗口干扰拖动手势导致选区边界乱跳
+    // 手指是否仍按在文稿上：长按/拖动期间隐藏悬浮菜单，抬起后才显示，
+    // 避免菜单窗口干扰手势导致选区边界乱跳
     var isTouchingText by remember { mutableStateOf(false) }
 
-    // 选区正在变化（长按滑动选词、或拉动手柄调整边界）：期间隐藏悬浮菜单。
+    // 选区正在变化（长按滑动选词、拉动手柄调整边界）：期间隐藏悬浮菜单。
     // 不依赖触摸事件路径（手柄触摸区域可能超出容器边界收不到按下事件），以选区状态本身为准。
     var isAdjustingSelection by remember { mutableStateOf(false) }
 
-    // 选区连续变化期间视为正在调整边界，停止变化 300ms 后（即松手）视为结束
+    // 选区连续变化期间视为正在调整边界，停止变化 450ms 后（即松手）视为结束
     LaunchedEffect(Unit) {
         snapshotFlow { textFieldValue.selection }
             .drop(1)
             .collectLatest {
                 isAdjustingSelection = true
                 onSelectionDragChanged(true)
-                delay(300.milliseconds)
+                delay(450.milliseconds)
                 isAdjustingSelection = false
                 onSelectionDragChanged(false)
             }
+    }
+
+    // 播放时自动滚动：当前播放文字移出可视区域时平滑滚动回视口，保持其可见
+    LaunchedEffect(activeWordId, isPlaying, textLayoutResult, annotatedString) {
+        if (!isPlaying) return@LaunchedEffect
+        val layout = textLayoutResult ?: return@LaunchedEffect
+        val range = activeWordRange ?: return@LaunchedEffect
+        if (scrollState.maxValue <= 0) return@LaunchedEffect
+
+        val marginPx = with(density) { 24.dp.toPx() }
+        val viewportHeight = (layout.size.height - scrollState.maxValue).coerceAtLeast(1).toFloat()
+        val current = scrollState.value.toFloat()
+        val line = layout.getLineForOffset(range.start)
+        val lineTop = layout.getLineTop(line) - marginPx
+        val lineBottom = layout.getLineBottom(line) + marginPx
+        val target = when {
+            lineTop < current -> lineTop.coerceAtLeast(0f)
+            lineBottom > current + viewportHeight ->
+                (lineBottom - viewportHeight).coerceIn(0f, scrollState.maxValue.toFloat())
+            else -> current
+        }
+        if (target != current) {
+            scrollState.animateScrollTo(target.toInt())
+        }
     }
 
     // 屏蔽系统默认菜单
@@ -142,20 +212,62 @@ fun OptimizedTranscriptView(
         }
     }
 
+    val paddingPx = with(density) { 16.dp.toPx() }
+
     CompositionLocalProvider(LocalTextToolbar provides emptyTextToolbar) {
         Box(
             modifier = modifier
                 .fillMaxWidth()
-                .pointerInput(Unit) {
-                    // 观察整个文稿区域（包括选择手柄）的按下/抬起，不消费事件，
-                    // 用于拉动边界期间隐藏悬浮菜单，避免菜单窗口拦截手势导致边界乱跳
+                .pointerInput(transcriptResult) {
+                    // 统一手势处理：触摸跟踪 + 单击识别（有选区→取消选择；无选区→点击文字跳转播放）
                     awaitEachGesture {
-                        awaitFirstDown(requireUnconsumed = false)
+                        val down = awaitFirstDown(requireUnconsumed = false)
                         isTouchingText = true
+                        val downPos = down.position
+                        val downTime = down.uptimeMillis
+                        var isTap = true
+                        var lastEventTime = downTime
                         do {
                             val event = awaitPointerEvent()
+                            lastEventTime = event.changes.firstOrNull()?.uptimeMillis ?: lastEventTime
+                            if (event.changes.any {
+                                    it.pressed && (it.position - downPos).getDistance() > viewConfiguration.touchSlop
+                                }) {
+                                isTap = false
+                            }
                         } while (event.changes.any { it.pressed })
                         isTouchingText = false
+
+                        // 拖动/滑动（滚动、拉选）不算单击
+                        if (!isTap) return@awaitEachGesture
+                        // 长按选词后抬起不算单击（避免刚选出的选区立刻被清掉）
+                        if (lastEventTime - downTime > viewConfiguration.longPressTimeoutMillis) return@awaitEachGesture
+
+                        // 出现选择滑块：单击取消选择，不跳转播放进度
+                        if (!textFieldValue.selection.collapsed) {
+                            textFieldValue = textFieldValue.copy(selection = TextRange.Zero)
+                            onSelectionChanged(TextRange.Zero)
+                            return@awaitEachGesture
+                        }
+
+                        // 无选区：单击文字跳转播放进度（点击在边距/空白处不处理）
+                        val layout = textLayoutResult ?: return@awaitEachGesture
+                        val contentOffset = Offset(
+                            x = downPos.x - paddingPx,
+                            y = downPos.y - paddingPx + scrollState.value.toFloat()
+                        )
+                        if (contentOffset.x < 0f || contentOffset.y < 0f ||
+                            contentOffset.x > layout.size.width.toFloat() ||
+                            contentOffset.y > layout.size.height.toFloat()
+                        ) return@awaitEachGesture
+
+                        val position = layout.getOffsetForPosition(contentOffset)
+                        val entry = wordRangeMap.entries.firstOrNull { (_, range) ->
+                            position >= range.start && position < range.end
+                        }
+                        if (entry != null) {
+                            wordIdToStartMs[entry.key]?.let { onWordClick(it) }
+                        }
                     }
                 }
         ) {
@@ -193,35 +305,6 @@ fun OptimizedTranscriptView(
                                         }
                                     }
                                 }
-                                .pointerInput(transcriptResult) {
-                                    detectTapGestures { offset ->
-                                        // 点击文字时清空选区并关闭菜单
-                                        if (!textFieldValue.selection.collapsed) {
-                                            textFieldValue = textFieldValue.copy(selection = TextRange.Zero)
-                                            onSelectionChanged(TextRange.Zero)
-                                        }
-
-                                        textLayoutResult?.let { layout ->
-                                            val position = layout.getOffsetForPosition(offset)
-                                            
-                                            var currentIdx = 0
-                                            outer@for ((_, sentences) in transcriptResult.paragraphs) {
-                                                for ((_, _, _, _, words) in sentences) {
-                                                    for ((_, word1, startMs) in words) {
-                                                        val start = currentIdx
-                                                        val end = currentIdx + word1.length
-                                                        if (position in start until end) {
-                                                            onWordClick(startMs)
-                                                            break@outer
-                                                        }
-                                                        currentIdx = end
-                                                    }
-                                                }
-                                                currentIdx += 2
-                                            }
-                                        }
-                                    }
-                                }
                         ) {
                             innerTextField()
                         }
@@ -233,16 +316,15 @@ fun OptimizedTranscriptView(
             if (!selection.collapsed && textLayoutResult != null && !isTouchingText && !isAdjustingSelection) {
                 val layoutResult = textLayoutResult!!
                 val rect = layoutResult.getCursorRect(selection.end.coerceAtMost(annotatedString.length - 1))
-                
-                // 考虑 density 进行精确计算
-                val paddingPx = with(density) { 16.dp.toPx() }.toInt()
+
+                val paddingPxInt = paddingPx.toInt()
                 val menuOffsetY = with(density) { 60.dp.toPx() }.toInt()
-                
+
                 Popup(
                     alignment = Alignment.TopStart,
                     offset = IntOffset(
-                        x = (rect.left.toInt() + paddingPx),
-                        y = (rect.top.toInt() + paddingPx - scrollState.value - menuOffsetY)
+                        x = rect.left.toInt() + paddingPxInt,
+                        y = rect.top.toInt() + paddingPxInt - scrollState.value - menuOffsetY
                     ),
                     onDismissRequest = { /* 内部逻辑不自动关闭，除非取消选择 */ }
                 ) {
@@ -256,8 +338,10 @@ fun OptimizedTranscriptView(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             MenuItem(Icons.Default.ContentCopy, "复制") {
-                                val text = annotatedString.text.substring(selection.min, selection.max)
-                                clipboardManager.setText(AnnotatedString(text))
+                                val cleanText = copyTextExcludingTimestamps(
+                                    annotatedString.text, selection.min, selection.max, timestampRanges
+                                )
+                                clipboardManager.setText(AnnotatedString(cleanText))
                                 textFieldValue = textFieldValue.copy(selection = TextRange.Zero)
                                 onSelectionChanged(TextRange.Zero)
                             }
@@ -309,21 +393,24 @@ private fun MenuItem(
     }
 }
 
-private fun findWordRange(wordId: Long?, transcriptResult: TranscriptResult): TextRange? {
-    if (wordId == null) return null
-    var currentIdx = 0
-    for ((_, sentences) in transcriptResult.paragraphs) {
-        for ((_, _, _, _, words) in sentences) {
-            for (word in words) {
-                val start = currentIdx
-                val end = currentIdx + word.word.length
-                if (word.id == wordId) {
-                    return TextRange(start, end)
-                }
-                currentIdx = end
-            }
-        }
-        currentIdx += 2
+/**
+ * 从选中区间剔除时间戳行内容（时间戳 + 行尾换行），其余原文保留
+ */
+private fun copyTextExcludingTimestamps(
+    fullText: String,
+    selMin: Int,
+    selMax: Int,
+    timestampRanges: List<TextRange>
+): String {
+    val sb = StringBuilder()
+    var cursor = selMin
+    for (range in timestampRanges) {
+        val s = maxOf(range.start, selMin)
+        val e = minOf(range.end, selMax)
+        if (s >= e) continue
+        sb.append(fullText, cursor, s)
+        cursor = e
     }
-    return null
+    sb.append(fullText, cursor, selMax)
+    return sb.toString()
 }

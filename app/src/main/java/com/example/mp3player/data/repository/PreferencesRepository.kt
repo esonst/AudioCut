@@ -40,7 +40,8 @@ class PreferencesRepository(context: Context) {
         private const val KEY_ASR_THREADS = "key_asr_threads"
         private const val KEY_ASR_LANGUAGE = "key_asr_language"
         private const val KEY_ENABLE_DOC_TRANSCRIPT = "key_enable_doc_transcript"
-        private const val KEY_ENABLE_SMART_PUNCT = "key_enable_smart_punct"
+        private const val KEY_PUNCT_CHUNK_CHARS = "key_punct_chunk_chars"
+        private const val KEY_ENABLE_LAYOUT_OPTIMIZATION = "key_enable_layout_optimization"
         private const val KEY_ENABLE_VAD = "key_enable_vad"
         private const val KEY_DEFAULT_EXPORT_FORMAT = "key_default_export_format"
         private const val KEY_IMPORTED_AUDIO_URIS = "key_imported_audio_uris"
@@ -394,7 +395,8 @@ class PreferencesRepository(context: Context) {
                 paragraphs = paragraphs,
                 durationMs = durationMs,
                 isCompleted = isCompleted,
-                processedDurationMs = processedDurationMs
+                processedDurationMs = processedDurationMs,
+                isLayoutOptimized = root.optBoolean("isLayoutOptimized", false)
             )
         } catch (e: Exception) {
             null
@@ -413,6 +415,7 @@ class PreferencesRepository(context: Context) {
                 put("durationMs", result.durationMs)
                 put("isCompleted", result.isCompleted)
                 put("processedDurationMs", result.processedDurationMs)
+                put("isLayoutOptimized", result.isLayoutOptimized)
 
                 val wordsArray = JSONArray()
                 for (w in result.words) {
@@ -479,12 +482,17 @@ class PreferencesRepository(context: Context) {
     fun getAsrLanguage(): String = prefs.getString(KEY_ASR_LANGUAGE, "") ?: ""
     fun saveAsrLanguage(lang: String) = prefs.edit { putString(KEY_ASR_LANGUAGE, lang) }
 
-    // 8.5 文稿转写与智能分句开关
+    // 8.5 文稿转写与排版优化开关
     fun getEnableDocTranscript(): Boolean = prefs.getBoolean(KEY_ENABLE_DOC_TRANSCRIPT, false)
     fun saveEnableDocTranscript(enabled: Boolean) = prefs.edit { putBoolean(KEY_ENABLE_DOC_TRANSCRIPT, enabled) }
 
-    fun getEnableSmartPunct(): Boolean = prefs.getBoolean(KEY_ENABLE_SMART_PUNCT, false)
-    fun saveEnableSmartPunct(enabled: Boolean) = prefs.edit { putBoolean(KEY_ENABLE_SMART_PUNCT, enabled) }
+    /** 排版优化单次文本数量（字）：每次交给 punct 标点模型处理的字符数，默认 1000 */
+    fun getPunctChunkChars(): Int = prefs.getInt(KEY_PUNCT_CHUNK_CHARS, 1000)
+    fun savePunctChunkChars(chars: Int) = prefs.edit { putInt(KEY_PUNCT_CHUNK_CHARS, chars.coerceIn(100, 5000)) }
+
+    /** 开启排版优化（默认关闭；开启时检测 punct 标点模型是否已安装） */
+    fun getEnableLayoutOptimization(): Boolean = prefs.getBoolean(KEY_ENABLE_LAYOUT_OPTIMIZATION, false)
+    fun saveEnableLayoutOptimization(enabled: Boolean) = prefs.edit { putBoolean(KEY_ENABLE_LAYOUT_OPTIMIZATION, enabled) }
 
     fun getEnableVad(): Boolean = prefs.getBoolean(KEY_ENABLE_VAD, true)
     fun saveEnableVad(enabled: Boolean) = prefs.edit { putBoolean(KEY_ENABLE_VAD, enabled) }

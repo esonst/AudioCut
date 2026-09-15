@@ -60,7 +60,8 @@ fun TranscriptScreen(
     val asrChunkSeconds by transcriptViewModel.asrChunkSeconds.collectAsState()
     val asrLog by transcriptViewModel.asrLog.collectAsState()
     val modelInstallState by transcriptViewModel.modelInstallState.collectAsState()
-
+    val isOptimizing by transcriptViewModel.isOptimizing.collectAsState()
+    val layoutOptimizationEnabled by transcriptViewModel.layoutOptimizationEnabled.collectAsState()
     // 文本选择拖动期间隐藏浮动播放卡片
     var isDraggingSelection by remember { mutableStateOf(false) }
 
@@ -203,10 +204,11 @@ fun TranscriptScreen(
                         if (result.words.isNotEmpty()) {
                             item {
                                 TranscriptHeaderView(
-                                    mainViewModel = mainViewModel,
                                     transcriptViewModel = transcriptViewModel,
+                                    isOptimizing = isOptimizing,
                                     wordCount = result.words.size,
-                                    fullText = result.fullText
+                                    fullText = result.fullText,
+                                    showLayoutOptimization = layoutOptimizationEnabled
                                 )
                             }
 
@@ -231,6 +233,7 @@ fun TranscriptScreen(
                                             onCreateSegment = { transcriptViewModel.createSegmentFromSelection() },
                                             onCreateTrimRange = { transcriptViewModel.createTrimFromSelection() },
                                             onSelectionDragChanged = { isDraggingSelection = it },
+                                            isPlaying = isPlaying,
                                             modifier = Modifier.heightIn(max = 600.dp)
                                         )
                                     }
@@ -355,10 +358,11 @@ fun AsrLogCard(
 
 @Composable
 fun TranscriptHeaderView(
-    mainViewModel: MainViewModel,
     transcriptViewModel: TranscriptViewModel,
+    isOptimizing: Boolean,
     wordCount: Int,
-    fullText: String
+    fullText: String,
+    showLayoutOptimization: Boolean = true
 ) {
     var showCopyDialog by remember { mutableStateOf(false) }
 
@@ -384,10 +388,26 @@ fun TranscriptHeaderView(
                     }) {
                         Text("删除文稿", fontSize = 12.sp, color = Color.Red.copy(alpha = 0.7f))
                     }
-                    TextButton(onClick = {
-                        mainViewModel.navigateTo(AppScreen.CLIP)
-                    }) {
-                        Text("进入剪辑", fontSize = 12.sp, color = PrimaryLight)
+                    // 排版优化：使用 punct 模型删除标点后重新添加标点（需先在设置中开启排版优化）
+                    if (showLayoutOptimization) {
+                    TextButton(
+                        onClick = { transcriptViewModel.optimizeTranscriptLayout() },
+                        enabled = !isOptimizing
+                    ) {
+                        if (isOptimizing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                                color = PrimaryLight
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+                        Text(
+                            text = if (isOptimizing) "优化中..." else "排版优化",
+                            fontSize = 12.sp,
+                            color = if (isOptimizing) TextMuted else PrimaryLight
+                        )
+                    }
                     }
                 }
             }

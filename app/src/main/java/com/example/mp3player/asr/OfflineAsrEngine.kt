@@ -2,7 +2,6 @@ package com.example.mp3player.asr
 
 import android.content.Context
 import com.example.mp3player.data.model.*
-import com.k2fsa.sherpa.onnx.OfflinePunctuation
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import com.k2fsa.sherpa.onnx.Vad
 import kotlinx.coroutines.Dispatchers
@@ -11,12 +10,12 @@ import kotlinx.coroutines.withContext
 /**
  * 离线文稿转写引擎（流水线编排器）
  *
- * 处理流程：分块 -> VAD -> 文字识别 -> 添加标点符号和分段 -> 返回结果
+ * 处理流程：分块 -> VAD -> 文字识别 -> 机械分段 -> 返回结果
  * - 分块：AudioChunker（FFmpeg 解码为 16kHz 单声道 PCM，带前后冗余）
  * - VAD：VadSegmenter（切分人声片段，可关闭）
  * - 文字识别：SenseVoiceRecognizer（SenseVoice 离线模型，输出逐字时间戳）
- * - 添加标点符号和分段：PunctuationSegmenter
- *   （智能分句使用 punct-ct 模型恢复标点；关闭或模型缺失时按停顿机械分句）
+ * - 机械分段：PunctuationSegmenter（按词间停顿 + 字数上限规则分句，识别期统一机械分段；
+ *   punct-ct 标点模型仅在文稿页【排版优化】中用于删除并重新添加标点）
  *
  * 模型文件存放于 filesDir/models 下，由 [ModelManager] 统一管理（下载/导入/检测）。
  */
@@ -138,18 +137,9 @@ class OfflineAsrEngine(private val context: Context) {
         }
         onLog("识别：SenseVoice 模型已加载（${config.asrThreads} 线程）")
 
-        val punct = if (config.useSmartPunctuation) {
-            punctSegmenter.getOrInit(modelManager.punctDir, config.asrThreads)
-        } else null
-        if (config.useSmartPunctuation) {
-            onLog(
-                when {
-                    punct != null -> "智能分句：punct-ct 模型已加载（${modelManager.punctDir.name}）"
-                    modelManager.isPunctReady() -> "智能分句：模型文件存在但加载失败，将降级为机械分句"
-                    else -> "智能分句：模型缺失，将降级为机械分句"
-                }
-            )
-        }
+        // 识别期统一采用机械分段（按停顿 + 字数规则分句）；
+        // punct-ct 标点模型仅在文稿页【排版优化】时调用（删除标点后重新添加）
+        onLog("分句方式：机械分句（识别阶段统一机械分段；标点精排请使用文稿页【排版优化】）")
 
         // 2. 分块 -> 3. VAD -> 4. 文字识别（循环处理各分块）
         val accumulatedWords = existingWords.toMutableList()
@@ -199,15 +189,13 @@ class OfflineAsrEngine(private val context: Context) {
             val progress = (processedMs.toFloat() / totalDurationMs).coerceIn(0.1f, 0.95f)
             onProgress(progress)
 
-            // 5. 增量返回中间识别结果（含标点与分段）
+            // 5. 增量返回中间识别结果（机械分段）
             if (onPartialResult != null) {
                 onPartialResult(
                     buildResult(
                         audioId = audio.id,
                         words = accumulatedWords.toList(),
                         totalDurationMs = totalDurationMs,
-                        useSmartPunctuation = config.useSmartPunctuation,
-                        punct = punct,
                         isCompleted = processedMs >= totalDurationMs,
                         processedMs = processedMs,
                         onLog = onLog
@@ -218,13 +206,11 @@ class OfflineAsrEngine(private val context: Context) {
 
         onProgress(1.0f)
 
-        // 5. 添加标点符号和分段 -> 返回结果
+        // 5. 机械分段 -> 返回结果
         val result = buildResult(
             audioId = audio.id,
             words = accumulatedWords.toList(),
             totalDurationMs = totalDurationMs,
-            useSmartPunctuation = config.useSmartPunctuation,
-            punct = punct,
             isCompleted = true,
             processedMs = totalDurationMs,
             onLog = onLog
@@ -286,14 +272,12 @@ class OfflineAsrEngine(private val context: Context) {
     }
 
     /**
-     * 组装识别结果：添加标点符号和分段 -> 句子/段落/全文
+     * 组装识别结果：机械分段 -> 句子/段落/全文
      */
     private fun buildResult(
         audioId: Long,
         words: List<TranscriptWord>,
         totalDurationMs: Long,
-        useSmartPunctuation: Boolean,
-        punct: OfflinePunctuation?,
         isCompleted: Boolean,
         processedMs: Long,
         onLog: (String) -> Unit = {}
@@ -301,8 +285,8 @@ class OfflineAsrEngine(private val context: Context) {
         val sentences = punctSegmenter.buildSentences(
             words = words,
             totalDurationMs = totalDurationMs,
-            useSmartPunctuation = useSmartPunctuation,
-            punct = punct,
+            useSmartPunctuation = false,
+            punct = null,
             onLog = onLog
         )
         val paragraphs = PunctuationSegmenter.buildParagraphsFromSentences(sentences)

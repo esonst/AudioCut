@@ -50,5 +50,24 @@ data class TranscriptResult(
     val paragraphs: List<TranscriptParagraph> = emptyList(),
     val durationMs: Long,
     val isCompleted: Boolean = true,
-    val processedDurationMs: Long = durationMs
+    val processedDurationMs: Long = durationMs,
+    /** 是否已执行排版优化（true 时文稿每段开头显示 [hh:mm:ss] 时间戳行） */
+    val isLayoutOptimized: Boolean = false
 )
+
+
+/**
+ * 将毫秒时间格式化为 "[hh:mm:ss]"（时/分/秒均补零），用于文稿段首时间戳行
+ */
+fun formatTranscriptTimestamp(ms: Long): String {
+    val totalSec = (ms / 1000).coerceAtLeast(0)
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    return "[%02d:%02d:%02d]".format(h, m, s)
+}
+
+/**
+ * 时间戳行在文稿文本中的长度（时间戳字符数 + 换行符 1）
+ */
+fun transcriptTimestampLineLength(ms: Long): Int = formatTranscriptTimestamp(ms).length + 1

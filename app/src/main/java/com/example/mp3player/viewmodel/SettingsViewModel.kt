@@ -18,10 +18,11 @@ import kotlinx.coroutines.withContext
 
 /**
  * 设置界面 ViewModel
- * 负责文稿转写配置（开启文稿转写 / 智能分句 / 分块 / VAD）、数据清理、ASR 资源释放
+ * 负责文稿配置（开启文稿 / 开启排版优化 / 排版优化单次字数 / 分块 / VAD）、数据清理、ASR 资源释放
  *
- * 模型管理：开启文稿转写/智能分句时先检测模型，缺失则提示下载或导入；
+ * 模型管理：开启文稿时先检测识别模型，缺失则提示下载或导入；
  * 下载带进度条，失败时展示下载地址卡片供手动下载后导入。
+ * 开启排版优化时先检测标点模型（punct-ct），缺失则提示下载或导入。
  */
 class SettingsViewModel(
     application: Application,
@@ -32,12 +33,18 @@ class SettingsViewModel(
     private val audioRepository: AudioRepository
 ) : BaseViewModel(application, eventBus) {
 
-    // ==================== 文稿转写开关 ====================
+    // ==================== 文稿开关 ====================
     private val _enableDocTranscript = MutableStateFlow(prefs.getEnableDocTranscript())
     val enableDocTranscript: StateFlow<Boolean> = _enableDocTranscript.asStateFlow()
 
-    private val _enableSmartPunct = MutableStateFlow(prefs.getEnableSmartPunct())
-    val enableSmartPunct: StateFlow<Boolean> = _enableSmartPunct.asStateFlow()
+    // ==================== 排版优化开关 ====================
+    private val _enableLayoutOptimization = MutableStateFlow(prefs.getEnableLayoutOptimization())
+    val enableLayoutOptimization: StateFlow<Boolean> = _enableLayoutOptimization.asStateFlow()
+
+    // ==================== 排版优化设置 ====================
+    /** 排版优化单次文本数量（字）：每次交给 punct 标点模型处理的字符数，默认 1000 */
+    private val _punctChunkChars = MutableStateFlow(prefs.getPunctChunkChars())
+    val punctChunkChars: StateFlow<Int> = _punctChunkChars.asStateFlow()
 
     // ==================== 分块设置 ====================
     private val _enableSlicing = MutableStateFlow(prefs.getEnableSlicing())
@@ -99,29 +106,40 @@ class SettingsViewModel(
             if (ready) {
                 _enableDocTranscript.value = true
                 prefs.saveEnableDocTranscript(true)
-                emitToast("识别模型已就绪，文稿转写已开启")
+                emitToast("识别模型已就绪，文稿已开启")
             }
         }
     }
 
     /**
-     * 开启智能分句：先检测 punct-ct 标点模型，就绪才开启；缺失则提示下载或导入。
-     * 关闭则按当前机械方式分句。
+     * 开启排版优化：先检测 punct 标点模型，就绪才开启；缺失则提示下载或导入。
+     * 关闭则直接保存。
      */
-    fun onToggleSmartPunct(enabled: Boolean) {
+    fun onToggleLayoutOptimization(enabled: Boolean) {
         if (!enabled) {
-            _enableSmartPunct.value = false
-            prefs.saveEnableSmartPunct(false)
+            _enableLayoutOptimization.value = false
+            prefs.saveEnableLayoutOptimization(false)
+            eventBus.notifyLayoutOptimizationEnabledChanged(false)
             return
         }
         viewModelScope.launch {
             val ready = coordinator.checkOrPrompt(ModelManager.ModelType.PUNCT_CT)
             if (ready) {
-                _enableSmartPunct.value = true
-                prefs.saveEnableSmartPunct(true)
-                emitToast("标点模型已就绪，智能分句已开启")
+                _enableLayoutOptimization.value = true
+                prefs.saveEnableLayoutOptimization(true)
+                eventBus.notifyLayoutOptimizationEnabledChanged(true)
+                emitToast("标点模型已就绪，排版优化已开启")
             }
         }
+    }
+
+    /**
+     * 设置排版优化单次文本数量（字）：取值范围 100 - 5000
+     */
+    fun setPunctChunkChars(chars: Int) {
+        val clamped = chars.coerceIn(100, 5000)
+        _punctChunkChars.value = clamped
+        prefs.savePunctChunkChars(clamped)
     }
 
     // ==================== 模型下载 / 导入 ====================
@@ -161,9 +179,11 @@ class SettingsViewModel(
                 _enableDocTranscript.value = true
                 prefs.saveEnableDocTranscript(true)
             }
+            // punct-ct 标点模型：安装完成后开启排版优化开关
             ModelManager.ModelType.PUNCT_CT -> {
-                _enableSmartPunct.value = true
-                prefs.saveEnableSmartPunct(true)
+                _enableLayoutOptimization.value = true
+                prefs.saveEnableLayoutOptimization(true)
+                eventBus.notifyLayoutOptimizationEnabledChanged(true)
             }
         }
     }

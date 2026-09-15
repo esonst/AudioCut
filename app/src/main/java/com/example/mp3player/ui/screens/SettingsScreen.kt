@@ -25,12 +25,12 @@ import com.example.mp3player.viewmodel.MainViewModel
 import com.example.mp3player.viewmodel.SettingsViewModel
 
 /**
- * 设置界面：文稿转写设置卡片（文稿转写 / 智能分句 / 分块 / VAD）+ 数据管理 + 关于
+ * 设置界面：文稿设置卡片（开启文稿 / 开启排版优化 / 分块 / VAD，未开启文稿时隐藏其它设置）+ 数据管理 + 关于
  */
 @Composable
 fun SettingsScreen(mainViewModel: MainViewModel, settingsViewModel: SettingsViewModel, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val enableDocTranscript by settingsViewModel.enableDocTranscript.collectAsState()
-    val enableSmartPunct by settingsViewModel.enableSmartPunct.collectAsState()
+    val punctChunkChars by settingsViewModel.punctChunkChars.collectAsState()
     val enableSlicing by settingsViewModel.enableSlicing.collectAsState()
     val asrChunkSeconds by settingsViewModel.asrChunkSeconds.collectAsState()
     val enableVad by settingsViewModel.enableVad.collectAsState()
@@ -39,8 +39,10 @@ fun SettingsScreen(mainViewModel: MainViewModel, settingsViewModel: SettingsView
     val vadMinSpeech by settingsViewModel.vadMinSpeech.collectAsState()
     val vadMaxSpeech by settingsViewModel.vadMaxSpeech.collectAsState()
     val modelInstallState by settingsViewModel.modelInstallState.collectAsState()
+    val enableLayoutOptimization by settingsViewModel.enableLayoutOptimization.collectAsState()
 
     var chunkInput by remember(asrChunkSeconds) { mutableStateOf(asrChunkSeconds.toString()) }
+    var punctChunkInput by remember(punctChunkChars) { mutableStateOf(punctChunkChars.toString()) }
     var vadThresholdInput by remember(vadThreshold) { mutableStateOf(vadThreshold.toString()) }
     var vadMinSilenceInput by remember(vadMinSilence) { mutableStateOf(vadMinSilence.toString()) }
     var vadMinSpeechInput by remember(vadMinSpeech) { mutableStateOf(vadMinSpeech.toString()) }
@@ -84,11 +86,11 @@ fun SettingsScreen(mainViewModel: MainViewModel, settingsViewModel: SettingsView
                 .verticalScroll(rememberScrollState())
                 .padding(start = 16.dp, end = 16.dp, bottom = 110.dp) // 预留底部导航栏高度，避免内容被遮挡
         ) {
-            // ==================== 文稿转写设置卡片 ====================
-            SettingsSection(title = "文稿转写设置") {
+            // ==================== 文稿设置卡片 ====================
+            SettingsSection(title = "文稿设置") {
                 SettingsSwitchItem(
                     icon = Icons.Default.Description,
-                    title = "开启文稿转写",
+                    title = "开启文稿",
                     subtitle = "需安装 SenseVoice 识别模型；未安装时提示下载或导入",
                     checked = enableDocTranscript,
                     onCheckedChange = {
@@ -96,15 +98,32 @@ fun SettingsScreen(mainViewModel: MainViewModel, settingsViewModel: SettingsView
                     }
                 )
 
-                SettingsSwitchItem(
-                    icon = Icons.Default.AutoAwesome,
-                    title = "智能分句",
-                    subtitle = "使用 punct-ct 模型自动添加标点并分句；关闭则按停顿机械分句",
-                    checked = enableSmartPunct,
-                    onCheckedChange = {
-                        settingsViewModel.onToggleSmartPunct(it)
+                // 未开启文稿时，隐藏其它文稿相关设置
+                if (enableDocTranscript) {
+                    SettingsSwitchItem(
+                        icon = Icons.Default.AutoAwesome,
+                        title = "开启排版优化",
+                        subtitle = "使用 punct-ct 标点模型删除并重加标点；未安装时提示下载或导入",
+                        checked = enableLayoutOptimization,
+                        onCheckedChange = {
+                            settingsViewModel.onToggleLayoutOptimization(it)
+                        }
+                    )
+
+                    if (enableLayoutOptimization) {
+                        SettingsInputItem(
+                            icon = Icons.Default.TextFields,
+                            title = "排版优化单次字数",
+                            subtitle = "文稿页【排版优化】每次交给标点模型处理的字符数（默认 1000，重叠窗口固定 20 字）",
+                            value = punctChunkInput,
+                            onValueChange = { input ->
+                                punctChunkInput = input.filter { it.isDigit() }
+                                punctChunkInput.toIntOrNull()?.let {
+                                    if (it in 100..5000) settingsViewModel.setPunctChunkChars(it)
+                                }
+                            }
+                        )
                     }
-                )
 
                 HorizontalDivider(color = SurfaceVariantLight.copy(alpha = 0.6f))
 
@@ -196,6 +215,7 @@ fun SettingsScreen(mainViewModel: MainViewModel, settingsViewModel: SettingsView
                             filtered.toFloatOrNull()?.let { settingsViewModel.setVadMaxSpeech(it) }
                         }
                     )
+                }
                 }
             }
 
