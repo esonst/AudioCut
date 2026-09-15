@@ -54,7 +54,10 @@ class ConvertViewModel(
     private var convertSessionId: Long = -1L
     @Volatile
     private var convertCancelled = false
+    // 以下字段在 IO 协程与统计回调线程间共享，需保证可见性
+    @Volatile
     private var convertTotalDurationMs = 0L
+    @Volatile
     private var convertStartTime = 0L
     private var conversionPollJob: Job? = null
 
@@ -184,12 +187,15 @@ class ConvertViewModel(
             }
 
             // 统计回调：精准进度
+            // 注意：本库（ffmpeg-kit 8.1.2）Statistics.time 的单位是【毫秒】
+            // （见 FFmpegKitConfig.statistics 的 time 参数注释 "processed duration in milliseconds"），
+            // 直接用毫秒除以总时长得到进度即可，切勿再乘 1000 —— 曾因误当秒处理导致进度条瞬间跳满、剩余时间失真
             val statisticsCallback = StatisticsCallback { stats ->
                 val totalMs = convertTotalDurationMs
-                val processedSec = stats?.time ?: 0.0
-                if (totalMs <= 0L || processedSec <= 0.0) return@StatisticsCallback
+                val processedMs = stats?.time ?: 0.0
+                if (totalMs <= 0L || processedMs <= 0.0) return@StatisticsCallback
 
-                val progress = ((processedSec * 1000.0) / totalMs).toFloat().coerceIn(0f, 0.99f)
+                val progress = (processedMs / totalMs).toFloat().coerceIn(0f, 0.99f)
                 val elapsed = System.currentTimeMillis() - convertStartTime
                 val remaining = if (progress > 0.01f) ((elapsed / progress) * (1f - progress)).toLong() else 0L
 
