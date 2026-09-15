@@ -34,9 +34,6 @@ import com.example.audiocut.viewmodel.MainViewModel
 fun ConvertScreen(mainViewModel: MainViewModel, convertViewModel: ConvertViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val currentAudio by mainViewModel.currentPlayingAudio.collectAsState()
-    val isPlaying by mainViewModel.isPlaying.collectAsState()
-    val currentPositionMs by mainViewModel.currentPositionMs.collectAsState()
-    val durationMs by mainViewModel.durationMs.collectAsState()
     val convertState by convertViewModel.convertState.collectAsState()
     val convertInputFile by convertViewModel.convertInputFile.collectAsState()
     val isVideoInput by convertViewModel.isVideoInput.collectAsState()
