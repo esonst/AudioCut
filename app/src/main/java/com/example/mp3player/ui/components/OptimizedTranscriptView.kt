@@ -1,5 +1,7 @@
 package com.example.mp3player.ui.components
 
+import android.view.MotionEvent
+import android.view.View
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
@@ -58,7 +60,8 @@ fun OptimizedTranscriptView(
     modifier: Modifier = Modifier,
     onCreateTrimRange: (String) -> Unit = {},
     onSelectionDragChanged: (Boolean) -> Unit = {},
-    isPlaying: Boolean = false
+    isPlaying: Boolean = false,
+    isPageVisible: Boolean = true
 ) {
     val showTimestamps = transcriptResult.isLayoutOptimized
 
@@ -156,6 +159,34 @@ fun OptimizedTranscriptView(
     // 避免菜单窗口干扰手势导致选区边界乱跳
     var isTouchingText by remember { mutableStateOf(false) }
 
+    // 根 View 级触摸监听：捕捉主窗口内任意位置的按下（包括选择滑块手柄区域，
+    // 手柄触摸可能不经过下方 Compose 指针路径），只要还有手指按着就隐藏悬浮菜单，
+    // 全部抬起后才允许重新显示。返回 false 不消费事件，不影响 Compose 自身手势。
+    var anyPointerDown by remember { mutableStateOf(false) }
+    val rootView = LocalView.current
+    DisposableEffect(rootView) {
+        val listener = View.OnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> anyPointerDown = true
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> anyPointerDown = false
+            }
+            false
+        }
+        rootView.setOnTouchListener(listener)
+        onDispose {
+            rootView.setOnTouchListener(null)
+        }
+    }
+
+    // 页面不可见（Pager 滑动离开文稿页）时立即清空选择：悬浮菜单是独立窗口，
+    // 不会随页面不可见自动消失，必须在离开时主动取消选择，避免卡片残留在其它界面
+    LaunchedEffect(isPageVisible) {
+        if (!isPageVisible) {
+            textFieldValue = textFieldValue.copy(selection = TextRange.Zero)
+            onSelectionChanged(TextRange.Zero)
+        }
+    }
+
     // 选区正在变化（长按滑动选词、拉动手柄调整边界）：期间隐藏悬浮菜单。
     // 不依赖触摸事件路径（手柄触摸区域可能超出容器边界收不到按下事件），以选区状态本身为准。
     var isAdjustingSelection by remember { mutableStateOf(false) }
@@ -167,30 +198,32 @@ fun OptimizedTranscriptView(
             .collectLatest {
                 isAdjustingSelection = true
                 onSelectionDragChanged(true)
-                delay(450.milliseconds)
+                delay(350.milliseconds)
                 isAdjustingSelection = false
                 onSelectionDragChanged(false)
             }
     }
 
-    // 播放时自动滚动：当前播放文字移出可视区域时平滑滚动回视口，保持其可见
+    // 播放时自动滚动：正在播放的文字保持在屏幕约 3/4 高度处（视口 75% 锚点），
+    // 文字滚过锚点线或滚出顶部时平滑滚动回锚点；文稿已滚到底或顶时停在边界
     LaunchedEffect(activeWordId, isPlaying, textLayoutResult, annotatedString) {
         if (!isPlaying) return@LaunchedEffect
         val layout = textLayoutResult ?: return@LaunchedEffect
         val range = activeWordRange ?: return@LaunchedEffect
         if (scrollState.maxValue <= 0) return@LaunchedEffect
 
-        val marginPx = with(density) { 24.dp.toPx() }
         val viewportHeight = (layout.size.height - scrollState.maxValue).coerceAtLeast(1).toFloat()
         val current = scrollState.value.toFloat()
+        val anchor = viewportHeight * 0.75f // 3/4 锚点
         val line = layout.getLineForOffset(range.start)
-        val lineTop = layout.getLineTop(line) - marginPx
-        val lineBottom = layout.getLineBottom(line) + marginPx
-        val target = when {
-            lineTop < current -> lineTop.coerceAtLeast(0f)
-            lineBottom > current + viewportHeight ->
-                (lineBottom - viewportHeight).coerceIn(0f, scrollState.maxValue.toFloat())
-            else -> current
+        val lineTop = layout.getLineTop(line)
+        val lineBottom = layout.getLineBottom(line)
+        // 行滚出视口顶部，或行底部滚过 3/4 锚点线时，滚动使行顶部对齐 3/4 锚点；
+        // 超出滚动边界（已到底/顶）时停在边界
+        val target = if (lineTop < current || lineBottom > current + anchor) {
+            (lineTop - anchor).coerceIn(0f, scrollState.maxValue.toFloat())
+        } else {
+            current
         }
         if (target != current) {
             scrollState.animateScrollTo(target.toInt())
@@ -313,7 +346,7 @@ fun OptimizedTranscriptView(
             )
 
             // 自定义浮动菜单（拖动选择/拉动手柄期间不显示，边界稳定后（松手）才出现）
-            if (!selection.collapsed && textLayoutResult != null && !isTouchingText && !isAdjustingSelection) {
+            if (isPageVisible && !selection.collapsed && textLayoutResult != null && !isTouchingText && !anyPointerDown && !isAdjustingSelection) {
                 val layoutResult = textLayoutResult!!
                 val rect = layoutResult.getCursorRect(selection.end.coerceAtMost(annotatedString.length - 1))
 

@@ -112,7 +112,8 @@ fun MainScreen(
                     1 -> TranscriptScreen(
                         mainViewModel = mainViewModel,
                         transcriptViewModel = transcriptViewModel,
-                        clipViewModel = clipViewModel
+                        clipViewModel = clipViewModel,
+                        isPageVisible = pagerState.currentPage == page
                     )
                     2 -> ClipScreen(
                         mainViewModel = mainViewModel,

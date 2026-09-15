@@ -46,6 +46,7 @@ fun TranscriptScreen(
     mainViewModel: MainViewModel,
     transcriptViewModel: TranscriptViewModel,
     clipViewModel: ClipViewModel,
+    isPageVisible: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val currentAudio by mainViewModel.currentPlayingAudio.collectAsState()
@@ -173,10 +174,16 @@ fun TranscriptScreen(
                     Text("请先在音频库中选择音频进行识别", fontSize = 14.sp, color = TextMuted)
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    contentPadding = PaddingValues(bottom = 150.dp)
-                ) {
+                // 文稿卡片最大高度限制在悬浮播放栏上边缘上方（悬浮栏约 62dp + 间隙），
+                // 保证识别文稿卡片内容不会超出悬浮框被遮挡
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                    val maxCardHeight = (maxHeight - 80.dp).coerceAtLeast(150.dp)
+                    // LazyColumn 视口底部停在悬浮播放栏上边缘上方（悬浮栏约 62dp + 间隙），
+                    // 文稿滚动到任意位置都不会被悬浮播放栏遮挡
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize().padding(bottom = 80.dp),
+                        contentPadding = PaddingValues(bottom = 16.dp)
+                    ) {
                     // ASR 控制区域（只放进度条 + 时间）
                     item {
                         AsrControlCard(
@@ -234,7 +241,8 @@ fun TranscriptScreen(
                                             onCreateTrimRange = { transcriptViewModel.createTrimFromSelection() },
                                             onSelectionDragChanged = { isDraggingSelection = it },
                                             isPlaying = isPlaying,
-                                            modifier = Modifier.heightIn(max = 600.dp)
+                                            isPageVisible = isPageVisible,
+                                            modifier = Modifier.heightIn(max = maxCardHeight)
                                         )
                                     }
                                 }
@@ -245,6 +253,7 @@ fun TranscriptScreen(
 //                            }
                         }
                     }
+                }
                 }
             }
         }
