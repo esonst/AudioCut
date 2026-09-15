@@ -2,6 +2,7 @@ package com.example.audiocut.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
@@ -86,7 +87,11 @@ fun MainScreen(
         }
     }
 
+    // 各子界面（AudioLibrary/Transcript/Clip/Trim/Convert/Settings）内部已自行
+    // 通过 statusBarsPadding() 处理顶部状态栏间距，这里必须关闭 Scaffold 默认的
+    // systemBars contentWindowInsets，避免状态栏高度被重复计算导致顶部大空白。
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             BottomNavBar(
                 currentScreen = currentScreen,
