@@ -24,8 +24,8 @@ import com.example.audiocut.data.model.AudioItem
 import com.example.audiocut.data.model.ConvertQuality
 import com.example.audiocut.ui.components.ConversionProgressView
 import com.example.audiocut.ui.theme.*
-import com.example.audiocut.viewmodel.MainViewModel
 import com.example.audiocut.viewmodel.ConvertViewModel
+import com.example.audiocut.viewmodel.MainViewModel
 
 /**
  * 格式转换界面
@@ -59,11 +59,14 @@ fun ConvertScreen(mainViewModel: MainViewModel, convertViewModel: ConvertViewMod
             selectedQuality = ConvertQuality.HIGH
         }
     }
-
+    fun String.removeFileExtension(): String {
+        val dotIndex = lastIndexOf('.')
+        return if (dotIndex > 0) substring(0, dotIndex) else this
+    }
     // 默认输出文件名：前缀 "converted" + 原文件名
     val defaultOutputName = when {
         convertInputFile != null -> "converted_${java.io.File(convertInputFile!!).nameWithoutExtension}"
-        currentAudio != null -> "converted_${currentAudio!!.title}"
+        currentAudio != null -> "c_${currentAudio!!.title.removeFileExtension()}"
         else -> null
     }
     val effectiveOutputName = outputFileName ?: defaultOutputName
