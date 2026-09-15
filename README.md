@@ -40,7 +40,7 @@
 ## 技术栈
 
 | 分类 | 技术 |
-| --- | --- |
+|:---:|:---:|
 | 语言 | Kotlin 2.2.20 |
 | UI | Jetpack Compose + Material 3（Compose BOM 2024.09.00） |
 | 构建 | Android Gradle Plugin 9.1.0，Gradle (Kotlin DSL) + Version Catalog |
