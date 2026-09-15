@@ -28,9 +28,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mp3player.data.model.AudioItem
 import com.example.mp3player.data.model.AudioSegment
+import com.example.mp3player.navigation.AppScreen
 import com.example.mp3player.ui.components.AudioPreviewCard
 import com.example.mp3player.ui.theme.*
-import com.example.mp3player.navigation.AppScreen
 import com.example.mp3player.viewmodel.MainViewModel
 import com.example.mp3player.viewmodel.TrimViewModel
 import kotlinx.coroutines.coroutineScope
@@ -446,18 +446,18 @@ private fun TrimItemCard(
                     // 起点调节
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
-                            onClick = { onUpdateRange((trim.startMs - 100L).coerceAtLeast(0L), trim.endMs) },
+                            onClick = { onUpdateRange((trim.startMs - 50L).coerceAtLeast(0L), trim.endMs) },
                             modifier = Modifier.size(24.dp).continuousPress {
-                                onUpdateRange((trim.startMs - 100L).coerceAtLeast(0L), trim.endMs)
+                                onUpdateRange((trim.startMs - 50L).coerceAtLeast(0L), trim.endMs)
                             }
                         ) { Icon(Icons.Default.Remove, null, modifier = Modifier.size(16.dp)) }
 
                         Text("起点: ${formatPrecise(trim.startMs)}", fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp))
 
                         IconButton(
-                            onClick = { onUpdateRange((trim.startMs + 100L).coerceAtMost(trim.endMs - 100L), trim.endMs) },
+                            onClick = { onUpdateRange((trim.startMs + 50L).coerceAtMost(trim.endMs - 50L), trim.endMs) },
                             modifier = Modifier.size(24.dp).continuousPress {
-                                onUpdateRange((trim.startMs + 100L).coerceAtMost(trim.endMs - 100L), trim.endMs)
+                                onUpdateRange((trim.startMs + 50L).coerceAtMost(trim.endMs - 50L), trim.endMs)
                             }
                         ) { Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp)) }
                     }
@@ -465,18 +465,18 @@ private fun TrimItemCard(
                     // 终点调节
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
-                            onClick = { onUpdateRange(trim.startMs, (trim.endMs - 100L).coerceAtLeast(trim.startMs + 100L)) },
+                            onClick = { onUpdateRange(trim.startMs, (trim.endMs - 50L).coerceAtLeast(trim.startMs + 50L)) },
                             modifier = Modifier.size(24.dp).continuousPress {
-                                onUpdateRange(trim.startMs, (trim.endMs - 100L).coerceAtLeast(trim.startMs + 100L))
+                                onUpdateRange(trim.startMs, (trim.endMs - 50L).coerceAtLeast(trim.startMs + 50L))
                             }
                         ) { Icon(Icons.Default.Remove, null, modifier = Modifier.size(16.dp)) }
 
                         Text("终点: ${formatPrecise(trim.endMs)}", fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp))
 
                         IconButton(
-                            onClick = { onUpdateRange(trim.startMs, (trim.endMs + 100L).coerceAtMost(maxDurationMs)) },
+                            onClick = { onUpdateRange(trim.startMs, (trim.endMs + 50L).coerceAtMost(maxDurationMs)) },
                             modifier = Modifier.size(24.dp).continuousPress {
-                                onUpdateRange(trim.startMs, (trim.endMs + 100L).coerceAtMost(maxDurationMs))
+                                onUpdateRange(trim.startMs, (trim.endMs + 50L).coerceAtMost(maxDurationMs))
                             }
                         ) { Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp)) }
                     }

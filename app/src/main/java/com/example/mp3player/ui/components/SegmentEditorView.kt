@@ -501,18 +501,18 @@ fun SegmentItemCard(
                     // 起点调节
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
-                            onClick = { onUpdateRange((segment.startMs - 100L).coerceAtLeast(0L), segment.endMs) },
+                            onClick = { onUpdateRange((segment.startMs - 50L).coerceAtLeast(0L), segment.endMs) },
                             modifier = Modifier.size(24.dp).continuousPress { 
-                                onUpdateRange((segment.startMs - 100L).coerceAtLeast(0L), segment.endMs)
+                                onUpdateRange((segment.startMs - 50L).coerceAtLeast(0L), segment.endMs)
                             }
                         ) { Icon(Icons.Default.Remove, null, modifier = Modifier.size(16.dp)) }
                         
                         Text("起点: ${formatPrecise(segment.startMs)}", fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp))
                         
                         IconButton(
-                            onClick = { onUpdateRange((segment.startMs + 100L).coerceAtMost(segment.endMs - 100L), segment.endMs) },
+                            onClick = { onUpdateRange((segment.startMs + 50L).coerceAtMost(segment.endMs - 50L), segment.endMs) },
                             modifier = Modifier.size(24.dp).continuousPress {
-                                onUpdateRange((segment.startMs + 100L).coerceAtMost(segment.endMs - 100L), segment.endMs)
+                                onUpdateRange((segment.startMs + 50L).coerceAtMost(segment.endMs - 50L), segment.endMs)
                             }
                         ) { Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp)) }
                     }
@@ -520,18 +520,18 @@ fun SegmentItemCard(
                     // 终点调节
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
-                            onClick = { onUpdateRange(segment.startMs, (segment.endMs - 100L).coerceAtLeast(segment.startMs + 100L)) },
+                            onClick = { onUpdateRange(segment.startMs, (segment.endMs - 50L).coerceAtLeast(segment.startMs + 50L)) },
                             modifier = Modifier.size(24.dp).continuousPress {
-                                onUpdateRange(segment.startMs, (segment.endMs - 100L).coerceAtLeast(segment.startMs + 100L))
+                                onUpdateRange(segment.startMs, (segment.endMs - 50L).coerceAtLeast(segment.startMs + 50L))
                             }
                         ) { Icon(Icons.Default.Remove, null, modifier = Modifier.size(16.dp)) }
                         
                         Text("终点: ${formatPrecise(segment.endMs)}", fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp))
                         
                         IconButton(
-                            onClick = { onUpdateRange(segment.startMs, (segment.endMs + 100L).coerceAtMost(maxDurationMs)) },
+                            onClick = { onUpdateRange(segment.startMs, (segment.endMs + 50L).coerceAtMost(maxDurationMs)) },
                             modifier = Modifier.size(24.dp).continuousPress {
-                                onUpdateRange(segment.startMs, (segment.endMs + 100L).coerceAtMost(maxDurationMs))
+                                onUpdateRange(segment.startMs, (segment.endMs + 50L).coerceAtMost(maxDurationMs))
                             }
                         ) { Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp)) }
                     }
