@@ -16,20 +16,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import com.example.AudioCut.ui.screens.MainScreen
 import com.example.AudioCut.ui.theme.AudioCutTheme
-import com.example.AudioCut.viewmodel.AudioLibraryViewModel
-import com.example.AudioCut.viewmodel.ClipViewModel
-import com.example.AudioCut.viewmodel.ConvertViewModel
-import com.example.AudioCut.viewmodel.MainViewModel
-import com.example.AudioCut.viewmodel.SettingsViewModel
-import com.example.AudioCut.viewmodel.TranscriptViewModel
-import com.example.AudioCut.viewmodel.TrimViewModel
-import com.example.AudioCut.viewmodel.ViewModelFactory
+import com.example.AudioCut.viewmodel.*
 
 class MainActivity : ComponentActivity() {
 

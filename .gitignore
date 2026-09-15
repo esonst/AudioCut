@@ -22,7 +22,6 @@ build_output.txt
 
 # === 工具/AI 生成产物 ===
 .artifacts/
-app/src/main/java/com/example/mp3player/.artifacts/
 
 # === 大型模型文件 (237MB, 超过 GitHub 100MB 限制, 需自行托管) ===
 app/src/main/assets/model_offline/model.int8.onnx
