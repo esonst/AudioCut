@@ -5,9 +5,7 @@ plugins {
 
 android {
     namespace = "com.example.AudioCut"
-    compileSdk {
-        version = release(37)
-    }
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.example.AudioCut"
@@ -65,6 +63,7 @@ android {
         // sherpa-onnx AAR 内置的 libonnxruntime.so 为 4KB 页面对齐，属第三方库限制，项目侧无法修复
         disable += setOf("Aligned16KB")
     }
+    buildToolsVersion = "37.0.0"
 }
 
 dependencies {
@@ -83,7 +82,6 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
-    implementation(libs.material)
 
     // ExoPlayer / Media3
     implementation(libs.androidx.media3.exoplayer)

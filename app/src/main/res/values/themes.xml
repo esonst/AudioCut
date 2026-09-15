@@ -1,4 +1,4 @@
 <resources>
 
-    <style name="Theme.AudioCut" parent="Theme.MaterialComponents.Light" />
+    <style name="Theme.AudioCut" parent="android:Theme.Material.Light.NoActionBar" />
 </resources>
