@@ -139,7 +139,7 @@ class PunctuationSegmenter {
             val added = output.count { it in allPunctuationSet } - chunk.count { it in allPunctuationSet }
             totalAdded += added
             onLog("智能分句：第${chunkIndex}/${totalChunks}片 ${chunk.length}字→${output.length}字，新增标点 $added 个" +
-                if (punctuated == null) "（模型调用失败，保留原文）" else "")
+                    if (punctuated == null) "（模型调用失败，保留原文）" else "")
             sb.append(output)
             start = end
         }
@@ -175,6 +175,7 @@ class PunctuationSegmenter {
 
     /**
      * 智能分句：标点模型恢复标点 → 标点合并回词语 → 按句末标点切句
+     * 【修复】不再使用字符指针匹配错乱方案，时间戳完全沿用原始words
      */
     private fun buildSmartSentences(
         words: List<TranscriptWord>,
@@ -189,7 +190,7 @@ class PunctuationSegmenter {
 
         onLog("智能分句：输入 ${words.size} 词 / ${plain.length} 字，开始恢复标点")
         val punctuated = addPunctuation(punct, plain, onLog)
-        val merged = mergePunctuationIntoWords(cleaned, punctuated)
+        val merged = mergePunctuationToWordsFixed(cleaned, punctuated)
         if (merged.isEmpty()) return emptyList()
 
         val sentences = mutableListOf<TranscriptSentence>()
@@ -344,58 +345,57 @@ class PunctuationSegmenter {
     }
 
     /**
-     * 将标点模型输出的标点合并回词语时间戳
+     * 【修复版】把模型输出带标点文本中的标点，追加到对应词语末尾。
+     * 不改动任何 word 的 startMs / endMs，只修改 word 文本。
+     *
+     * 原理：遍历带标点文本，非标点字符计数；遇到标点时，
+     * 它属于"前面最近一个非标点字符"所在的词语。
+     * 不做严格字符匹配，模型改字也不会错位。
      */
-    private fun mergePunctuationIntoWords(
-        words: List<TranscriptWord>,
-        punctuated: String
+    private fun mergePunctuationToWordsFixed(
+        sourceWords: List<TranscriptWord>,
+        punctuatedFullText: String
     ): List<TranscriptWord> {
-        if (words.isEmpty()) return emptyList()
-        val result = mutableListOf<TranscriptWord>()
-        val pending = StringBuilder()
-        var p = 0
-        val len = punctuated.length
+        if (sourceWords.isEmpty()) return emptyList()
 
-        fun attachPending() {
-            if (pending.isEmpty() || result.isEmpty()) {
-                pending.clear()
-                return
+        // 1. 构建"纯文本第N个字符 → 属于第几个词"的映射
+        val charToWordIndex = mutableListOf<Int>()
+        for (wordIdx in sourceWords.indices) {
+            repeat(sourceWords[wordIdx].word.length) {
+                charToWordIndex.add(wordIdx)
             }
-            val last = result.last()
-            result[result.size - 1] = last.copy(word = last.word + pending.toString())
-            pending.clear()
         }
+        val totalPlainChars = charToWordIndex.size
 
-        for (word in words) {
-            if (word.word.isEmpty()) continue
+        // 2. 每个词待追加的标点后缀
+        val punctSuffix = Array(sourceWords.size) { StringBuilder() }
 
-            // 1. 消费当前词之前的标点 → 附加到上一个词末尾
-            while (p < len && punctuated[p] != word.word[0]) {
-                pending.append(punctuated[p])
-                p++
-            }
-            attachPending()
-
-            // 2. 匹配当前词字符
-            var idx = 0
-            while (idx < word.word.length && p < len) {
-                if (punctuated[p] == word.word[idx]) {
-                    p++
-                    idx++
+        // 3. 遍历模型输出：非标点字符计数，标点归到前面的词
+        var consumedPlainChars = 0
+        for (c in punctuatedFullText) {
+            if (c in allPunctuationSet) {
+                // 标点属于它前面最近的非标点字符所在的词
+                val targetIdx = if (consumedPlainChars == 0) {
+                    0 // 文本最开头的标点，挂到第一个词
                 } else {
-                    p++
+                    charToWordIndex[(consumedPlainChars - 1).coerceAtMost(totalPlainChars - 1)]
                 }
+                punctSuffix[targetIdx].append(c)
+            } else {
+                consumedPlainChars++
             }
-            result.add(word)
         }
 
-        // 3. 剩余尾部标点附加到最后一个词
-        while (p < len) {
-            pending.append(punctuated[p])
-            p++
-        }
-        attachPending()
+        // 4. 把标点后缀拼到对应词语，时间戳完全沿用原值
+        var result = sourceWords.mapIndexed { idx, word ->
+            if (punctSuffix[idx].isNotEmpty()) {
+                word.copy(word = word.word + punctSuffix[idx].toString())
+            } else {
+                word
+            }
 
+        }
         return result
     }
+
 }
