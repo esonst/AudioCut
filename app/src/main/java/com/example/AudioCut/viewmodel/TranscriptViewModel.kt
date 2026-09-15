@@ -86,6 +86,28 @@ class TranscriptViewModel(
     private val _asrChunkSeconds = MutableStateFlow(prefs.getAsrChunkSeconds())
     val asrChunkSeconds: StateFlow<Int> = _asrChunkSeconds.asStateFlow()
 
+    // ==================== 识别范围设置 ====================
+    /** 识别开始时间（毫秒，0 = 音频开头），默认整个音频 */
+    private val _asrStartMs = MutableStateFlow(0L)
+    val asrStartMs: StateFlow<Long> = _asrStartMs.asStateFlow()
+
+    /** 识别结束时间（毫秒，0 = 音频结尾），默认整个音频 */
+    private val _asrEndMs = MutableStateFlow(0L)
+    val asrEndMs: StateFlow<Long> = _asrEndMs.asStateFlow()
+
+    fun setAsrStartMs(startMs: Long) {
+        _asrStartMs.value = startMs.coerceAtLeast(0L)
+    }
+
+    fun setAsrEndMs(endMs: Long) {
+        _asrEndMs.value = endMs.coerceAtLeast(0L)
+    }
+
+    fun resetAsrRange() {
+        _asrStartMs.value = 0L
+        _asrEndMs.value = 0L
+    }
+
     // ==================== 处理日志（分块/VAD/识别/智能分句） ====================
     private val _asrLog = MutableStateFlow<List<String>>(emptyList())
     val asrLog: StateFlow<List<String>> = _asrLog.asStateFlow()
@@ -110,6 +132,9 @@ class TranscriptViewModel(
             currentPlayingAudio.collect { audio ->
                 _transcriptResult.value = audio?.let { prefs.getCachedTranscript(it.id) }
                 _selectedWordIds.value = emptySet()
+                // 切换音频后识别范围重置为整个音频
+                _asrStartMs.value = 0L
+                _asrEndMs.value = 0L
             }
         }
         // 当前音频被【覆盖】后清除内存中的文稿（原文稿已随覆盖一并清除）
@@ -118,6 +143,8 @@ class TranscriptViewModel(
                 if (currentPlayingAudio.value?.id == event.audioId) {
                     _transcriptResult.value = null
                     _selectedWordIds.value = emptySet()
+                    _asrStartMs.value = 0L
+                    _asrEndMs.value = 0L
                 }
             }
         }
@@ -246,20 +273,35 @@ class TranscriptViewModel(
                 _isAsrLoading.value = true
                 _asrLog.value = emptyList() // 新一轮识别清空日志
                 val totalMs = maxOf(1L, current.durationMs)
+
+                // 识别范围（绝对毫秒，0 结束 = 音频结尾）：识别只处理 [rangeStartMs, rangeEndMs] 区间
+                val rangeStartMs = _asrStartMs.value.coerceIn(0L, totalMs)
+                val rangeEndMs = if (_asrEndMs.value > 0L) _asrEndMs.value.coerceIn(rangeStartMs, totalMs) else totalMs
+                if (rangeEndMs <= rangeStartMs) {
+                    emitToast("识别范围无效：结束时间需晚于开始时间")
+                    return@launch
+                }
+                val spanMs = rangeEndMs - rangeStartMs
+
                 val config = buildAsrConfig(totalMs)
                 val isSlicing = config.useSlicing
-                val chunkTargetMs = if (isSlicing) config.chunkTargetMs else totalMs
+                val chunkTargetMs = if (isSlicing) config.chunkTargetMs else spanMs
                 val cached = _transcriptResult.value ?: prefs.getCachedTranscript(current.id)
-                val canResume = resumeIfPossible && cached != null && !cached.isCompleted && cached.processedDurationMs > 0L
-                val startOffsetMs = if (canResume) cached!!.processedDurationMs else 0L
-                val existingWords = if (canResume) cached!!.words else emptyList()
+                // 断点续传：仅当缓存进度落在当前识别窗口内时续传（避免整段缓存与自定义范围混用）
+                val cacheInRange = cached != null && cached.processedDurationMs in (rangeStartMs + 1)..rangeEndMs
+                val canResume = resumeIfPossible && cached != null && !cached.isCompleted && cacheInRange
+                val startOffsetMs = if (canResume) cached!!.processedDurationMs else rangeStartMs
+                // 续传时丢弃窗口外的旧词，确保文稿只包含 [开始, 结束] 区间内容
+                val existingWords = if (canResume)
+                    cached!!.words.filter { it.startMs >= rangeStartMs && it.endMs <= rangeEndMs }
+                else emptyList()
 
-                val totalChunks = if (isSlicing) (totalMs / chunkTargetMs + 1).toInt() else 1
+                val totalChunks = if (isSlicing) (spanMs / chunkTargetMs + 1).toInt() else 1
 
                 if (canResume) {
                     emitToast("正在从 ${startOffsetMs / 1000}s 继续生成文稿...")
-                    _asrProgress.value = (startOffsetMs.toFloat() / totalMs).coerceIn(0f, 0.95f)
-                    _asrProgressText.value = "[${startOffsetMs / chunkTargetMs}/$totalChunks]"
+                    _asrProgress.value = ((startOffsetMs - rangeStartMs).toFloat() / spanMs).coerceIn(0f, 0.95f)
+                    _asrProgressText.value = "[${(startOffsetMs - rangeStartMs) / chunkTargetMs}/$totalChunks]"
                 } else {
                     _asrProgress.value = 0f
                     _asrProgressText.value = "[0/$totalChunks]"
@@ -270,11 +312,13 @@ class TranscriptViewModel(
                     startOffsetMs = startOffsetMs,
                     existingWords = existingWords,
                     config = config,
+                    startMs = rangeStartMs,
+                    endMs = rangeEndMs,
                     onPartialResult = { partial ->
                         _transcriptResult.value = partial
                         prefs.saveCachedTranscript(current.id, partial)
                         val processedMs = partial.processedDurationMs
-                        _asrProgressText.value = "[${processedMs / chunkTargetMs}/$totalChunks]"
+                        _asrProgressText.value = "[${(processedMs - rangeStartMs) / chunkTargetMs}/$totalChunks]"
                     },
                     onProgress = { _asrProgress.value = it },
                     onLog = { appendLog(it) }

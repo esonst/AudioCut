@@ -89,6 +89,8 @@ class OfflineAsrEngine(private val context: Context) {
         startOffsetMs: Long = 0L,
         existingWords: List<TranscriptWord> = emptyList(),
         config: AsrConfig = AsrConfig(),
+        startMs: Long = 0L,
+        endMs: Long = 0L,
         onPartialResult: (suspend (TranscriptResult) -> Unit)? = null,
         onProgress: suspend (Float) -> Unit,
         onLog: (String) -> Unit = {}
@@ -106,6 +108,24 @@ class OfflineAsrEngine(private val context: Context) {
             totalDurationMs = chunker.extractAudioDuration(audio)
         }
         if (totalDurationMs <= 0) totalDurationMs = 3600_000L // 保底1小时
+
+        // 识别范围（绝对毫秒）：默认整段 [0, totalDurationMs]；startMs=0 表示音频开头，endMs=0 表示音频结尾
+        val effectiveStartMs = maxOf(startMs.coerceAtLeast(0L), startOffsetMs.coerceAtLeast(0L))
+            .coerceAtMost(totalDurationMs)
+        val effectiveEndMs = if (endMs > 0L) endMs.coerceIn(effectiveStartMs, totalDurationMs) else totalDurationMs
+        val rangeSpanMs = effectiveEndMs - effectiveStartMs
+        if (rangeSpanMs <= 0L) {
+            onLog("范围：无效区间 [${effectiveStartMs}ms, ${effectiveEndMs}ms]，跳过识别")
+            return@withContext TranscriptResult(
+                audioId = audio.id,
+                fullText = "",
+                words = emptyList(),
+                sentences = emptyList(),
+                paragraphs = emptyList(),
+                durationMs = totalDurationMs,
+                isCompleted = true
+            )
+        }
 
         val vad = if (vadFile != null) {
             vadSegmenter.getOrInit(
@@ -143,14 +163,14 @@ class OfflineAsrEngine(private val context: Context) {
 
         // 2. 分块 -> 3. VAD -> 4. 文字识别（循环处理各分块）
         val accumulatedWords = existingWords.toMutableList()
-        val chunkTargetMs = if (config.useSlicing) config.chunkTargetMs else maxOf(1L, totalDurationMs)
+        val chunkTargetMs = if (config.useSlicing) config.chunkTargetMs else maxOf(1L, rangeSpanMs)
         val ranges = chunker.buildChunkRanges(
-            totalMs = totalDurationMs,
-            startOffsetMs = startOffsetMs,
+            totalMs = effectiveEndMs,
+            startOffsetMs = effectiveStartMs,
             chunkTargetMs = chunkTargetMs
         )
-        onLog("分块：共 ${ranges.size} 个分块，每块 ${chunkTargetMs / 1000} 秒" +
-            if (startOffsetMs > 0) "，从 ${startOffsetMs / 1000}s 断点续传" else "")
+        onLog("范围：识别 [${effectiveStartMs / 1000}s, ${effectiveEndMs / 1000}s]（共 ${rangeSpanMs / 1000}s）")
+        onLog("分块：共 ${ranges.size} 个分块，每块 ${chunkTargetMs / 1000} 秒")
 
         for ((index, range) in ranges.withIndex()) {
             val actualStartMs = range[0]
@@ -186,7 +206,8 @@ class OfflineAsrEngine(private val context: Context) {
             }
 
             val processedMs = sliceEndMs
-            val progress = (processedMs.toFloat() / totalDurationMs).coerceIn(0.1f, 0.95f)
+            // 进度按识别范围跨度计算，保证自定义范围时进度条从 0 开始
+            val progress = ((processedMs - effectiveStartMs).toFloat() / rangeSpanMs).coerceIn(0.1f, 0.95f)
             onProgress(progress)
 
             // 5. 增量返回中间识别结果（机械分段）

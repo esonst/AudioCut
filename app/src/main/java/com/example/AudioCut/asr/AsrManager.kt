@@ -53,6 +53,8 @@ class AsrManager(
         startOffsetMs: Long = 0L,
         existingWords: List<com.example.audiocut.data.model.TranscriptWord> = emptyList(),
         config: AsrConfig = AsrConfig(),
+        startMs: Long = 0L,
+        endMs: Long = 0L,
         onPartialResult: (TranscriptResult) -> Unit,
         onProgress: (Float) -> Unit,
         onLog: (String) -> Unit = {}
@@ -64,6 +66,8 @@ class AsrManager(
                 startOffsetMs = startOffsetMs,
                 existingWords = existingWords,
                 config = config,
+                startMs = startMs,
+                endMs = endMs,
                 onPartialResult = onPartialResult,
                 onProgress = onProgress,
                 onLog = onLog
