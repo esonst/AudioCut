@@ -17,15 +17,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.audiocut.navigation.AppScreen
 import com.example.audiocut.ui.components.BottomNavBar
-import com.example.audiocut.ui.components.FloatingPlayerBar
-import com.example.audiocut.viewmodel.AudioLibraryViewModel
-import com.example.audiocut.viewmodel.ClipViewModel
-import com.example.audiocut.viewmodel.ConvertViewModel
-import com.example.audiocut.viewmodel.MainViewModel
-import com.example.audiocut.viewmodel.SettingsViewModel
-import com.example.audiocut.viewmodel.TranscriptViewModel
-import com.example.audiocut.viewmodel.TrimViewModel
+import com.example.audiocut.viewmodel.*
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 
 /**
  * 主界面：六屏左右滑动切换 + 底部导航栏 + 浮动播放栏
@@ -52,10 +47,6 @@ fun MainScreen(
     )
 
     val currentScreen by mainViewModel.currentScreen.collectAsStateWithLifecycle()
-    val currentAudio by mainViewModel.currentPlayingAudio.collectAsStateWithLifecycle()
-    val isPlaying by mainViewModel.isPlaying.collectAsStateWithLifecycle()
-    val currentPositionMs by mainViewModel.currentPositionMs.collectAsStateWithLifecycle()
-    val durationMs by mainViewModel.durationMs.collectAsStateWithLifecycle()
 
     // 全局 Toast
     LaunchedEffect(Unit) {
@@ -80,11 +71,12 @@ fun MainScreen(
         }
     }
 
-    // 音频库加载完成后恢复播放状态
-    LaunchedEffect(audioLibraryViewModel.allAudios.value.isNotEmpty()) {
-        if (audioLibraryViewModel.allAudios.value.isNotEmpty()) {
-            mainViewModel.loadLastPlaybackState(audioLibraryViewModel.allAudios.value)
-        }
+    // 音频库加载完成后恢复播放状态（在协程内等待列表非空，避免在组合中读取 StateFlow.value）
+    LaunchedEffect(Unit) {
+        val audios = audioLibraryViewModel.allAudios
+            .filter { it.isNotEmpty() }
+            .first()
+        mainViewModel.loadLastPlaybackState(audios)
     }
 
     // 各子界面（AudioLibrary/Transcript/Clip/Trim/Convert/Settings）内部已自行
