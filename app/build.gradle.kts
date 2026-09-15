@@ -89,7 +89,7 @@ dependencies {
     implementation(libs.androidx.media3.session)
 
     // ONNX Runtime & Sherpa ASR
-    implementation(libs.onnxruntime.android)
+//    implementation(libs.onnxruntime.android)
     implementation(files("libs/sherpa-onnx-1.13.8.aar"))
     
     // FFmpegKit
