@@ -89,26 +89,27 @@ fun TrimScreen(mainViewModel: MainViewModel, trimViewModel: TrimViewModel, modif
                 color = PrimaryDark,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
                 modifier = Modifier.weight(1f).padding(end = 8.dp)
             )
 
-            // 右上角【裁剪】按钮：点击执行裁剪预览
-            OutlinedButton(
-                onClick = { trimViewModel.startOrToggleTrimPreview() },
-                enabled = !isGeneratingTrimPreview && !isTrimExporting,
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = TrimRed),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-            ) {
-                if (isGeneratingTrimPreview) {
-                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = TrimRed)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("生成中", fontSize = 12.sp)
-                } else {
-                    Icon(Icons.Default.Crop, contentDescription = null, modifier = Modifier.size(15.dp))
-                    Text("裁剪", fontSize = 12.sp)
-                }
-            }
+//            // 右上角【裁剪】按钮：点击执行裁剪预览
+//            OutlinedButton(
+//                onClick = { trimViewModel.startOrToggleTrimPreview() },
+//                enabled = !isGeneratingTrimPreview && !isTrimExporting,
+//                shape = RoundedCornerShape(10.dp),
+//                colors = ButtonDefaults.outlinedButtonColors(contentColor = TrimRed),
+//                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+//            ) {
+//                if (isGeneratingTrimPreview) {
+//                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = TrimRed)
+//                    Spacer(modifier = Modifier.width(6.dp))
+//                    Text("生成中", fontSize = 12.sp)
+//                } else {
+//                    Icon(Icons.Default.Crop, contentDescription = null, modifier = Modifier.size(15.dp))
+//                    Text("裁剪", fontSize = 12.sp)
+//                }
+//            }
         }
 
         Text(

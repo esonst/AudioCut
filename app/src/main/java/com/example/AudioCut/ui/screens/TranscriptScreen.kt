@@ -61,8 +61,6 @@ fun TranscriptScreen(
     val modelInstallState by transcriptViewModel.modelInstallState.collectAsState()
     val isOptimizing by transcriptViewModel.isOptimizing.collectAsState()
     val layoutOptimizationEnabled by transcriptViewModel.layoutOptimizationEnabled.collectAsState()
-    // 文本选择拖动期间隐藏浮动播放卡片
-    var isDraggingSelection by remember { mutableStateOf(false) }
 
     // 文稿交互状态，支持跨段落位置记录
     val wordBoundsMap = remember { mutableStateMapOf<Long, Rect>() }
@@ -233,11 +231,11 @@ fun TranscriptScreen(
                                             wordsInSegmentsIds = wordsInSegmentsIds,
                                             onSelectionChanged = { transcriptViewModel.setSelectedTextRange(it) },
                                             onWordClick = { startMs ->
-                                                mainViewModel.seekToAndPlay(startMs)
+                                                // 点击文字只跳转播放进度，不改变播放状态（暂停保持暂停、播放保持播放）
+                                                mainViewModel.mainSeekTo(startMs)
                                             },
                                             onCreateSegment = { transcriptViewModel.createSegmentFromSelection() },
                                             onCreateTrimRange = { transcriptViewModel.createTrimFromSelection() },
-                                            onSelectionDragChanged = { isDraggingSelection = it },
                                             isPlaying = isPlaying,
                                             isPageVisible = isPageVisible,
                                             modifier = Modifier.heightIn(max = maxCardHeight)
@@ -256,22 +254,20 @@ fun TranscriptScreen(
             }
         }
 
-        if (!isDraggingSelection) {
-            FloatingPlayerBar(
-                currentAudio = currentAudio,
-                isPlaying = isPlaying,
-                currentPositionMs = currentPositionMs,
-                durationMs = durationMs,
-                onTogglePlayPause = { mainViewModel.toggleMainPlayPause() },
-                onFastForward5s = { mainViewModel.mainFastForwardOrRewind(5) },
-                onRewind5s = { mainViewModel.mainFastForwardOrRewind(-5) },
-                onPlayPrevious = { mainViewModel.playMainPrevious() },
-                onPlayNext = { mainViewModel.playMainNext() },
-                onSeekTo = { mainViewModel.mainSeekTo(it) },
-                onClickBar = { mainViewModel.navigateTo(AppScreen.TRANSCRIPT) },
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
-        }
+        FloatingPlayerBar(
+            currentAudio = currentAudio,
+            isPlaying = isPlaying,
+            currentPositionMs = currentPositionMs,
+            durationMs = durationMs,
+            onTogglePlayPause = { mainViewModel.toggleMainPlayPause() },
+            onFastForward5s = { mainViewModel.mainFastForwardOrRewind(5) },
+            onRewind5s = { mainViewModel.mainFastForwardOrRewind(-5) },
+            onPlayPrevious = { mainViewModel.playMainPrevious() },
+            onPlayNext = { mainViewModel.playMainNext() },
+            onSeekTo = { mainViewModel.mainSeekTo(it) },
+            onClickBar = { mainViewModel.navigateTo(AppScreen.TRANSCRIPT) },
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
     }
 
     // 模型下载/导入对话框（开始识别时模型缺失 → 提示下载或导入）

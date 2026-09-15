@@ -8,8 +8,9 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.CallMerge
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.AddCircleOutline
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,12 +25,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.example.audiocut.data.model.AudioItem
+import com.example.audiocut.navigation.PlayerTab
 import com.example.audiocut.ui.components.SegmentEditorHeader
 import com.example.audiocut.ui.components.SegmentItemCard
 import com.example.audiocut.ui.theme.*
-import com.example.audiocut.viewmodel.MainViewModel
 import com.example.audiocut.viewmodel.ClipViewModel
-import com.example.audiocut.navigation.PlayerTab
+import com.example.audiocut.viewmodel.MainViewModel
 
 /**
  * 剪辑页面（独立的标记片段管理与音频切片合成导出界面）
@@ -77,26 +78,27 @@ fun ClipScreen(mainViewModel: MainViewModel, clipViewModel: ClipViewModel, modif
                 color = PrimaryDark,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
                 modifier = Modifier.weight(1f).padding(end = 8.dp)
             )
             
             // 右上角【合并】按钮：点击执行合并预览
-            OutlinedButton(
-                onClick = { clipViewModel.startOrToggleMergedPreview() },
-                enabled = !isGeneratingMergedPreview,
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryLight),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-            ) {
-                if (isGeneratingMergedPreview) {
-                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = PrimaryLight)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("生成中", fontSize = 12.sp)
-                } else {
-                    Icon(Icons.AutoMirrored.Filled.CallMerge, contentDescription = null, modifier = Modifier.size(15.dp))
-                    Text("合并", fontSize = 12.sp)
-                }
-            }
+//            OutlinedButton(
+//                onClick = { clipViewModel.startOrToggleMergedPreview() },
+//                enabled = !isGeneratingMergedPreview,
+//                shape = RoundedCornerShape(10.dp),
+//                colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryLight),
+//                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+//            ) {
+//                if (isGeneratingMergedPreview) {
+//                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = PrimaryLight)
+//                    Spacer(modifier = Modifier.width(6.dp))
+//                    Text("生成中", fontSize = 12.sp)
+//                } else {
+//                    Icon(Icons.AutoMirrored.Filled.CallMerge, contentDescription = null, modifier = Modifier.size(15.dp))
+//                    Text("合并", fontSize = 12.sp)
+//                }
+//            }
         }
 
         Text(

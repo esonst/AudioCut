@@ -174,12 +174,6 @@ class MainViewModel(
         playerManager.playNext()
     }
 
-    fun seekToAndPlay(positionMs: Long) {
-        eventBus.sendStopAllPreview()
-        playerManager.seekTo(positionMs)
-        playerManager.play()
-    }
-
     override fun onCleared() {
         playerManager.release()
         super.onCleared()
