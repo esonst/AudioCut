@@ -15,7 +15,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -26,7 +25,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.example.audiocut.data.model.AudioItem
 import com.example.audiocut.navigation.PlayerTab
-import com.example.audiocut.ui.components.SegmentEditorHeader
+import com.example.audiocut.ui.components.EditorListHeaderCard
+import com.example.audiocut.ui.components.EmptyGuideCard
 import com.example.audiocut.ui.components.SegmentItemCard
 import com.example.audiocut.ui.theme.*
 import com.example.audiocut.viewmodel.ClipViewModel
@@ -41,7 +41,6 @@ fun ClipScreen(mainViewModel: MainViewModel, clipViewModel: ClipViewModel, modif
     val currentAudio by mainViewModel.currentPlayingAudio.collectAsState()
     val isPlaying by mainViewModel.isPlaying.collectAsState()
     val durationMs by mainViewModel.durationMs.collectAsState()
-    val currentPositionMs by mainViewModel.currentPositionMs.collectAsState()
     val segments by clipViewModel.segments.collectAsState()
     val previewingSegmentId by clipViewModel.previewingSegmentId.collectAsState()
     val isExporting by clipViewModel.isExporting.collectAsState()
@@ -133,79 +132,46 @@ fun ClipScreen(mainViewModel: MainViewModel, clipViewModel: ClipViewModel, modif
             ) {
                 if (segments.isEmpty()) {
                     item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        EmptyGuideCard(
+                            icon = Icons.Default.ContentCut,
+                            accent = PrimaryLight,
+                            title = "暂无标记片段",
+                            description = "您可以前往【文稿】页面长按滑动选中文本一键创建片段，在此精确调整、试听和拼接导出"
                         ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
+                            Button(
+                                onClick = { mainViewModel.switchTab(PlayerTab.TRANSCRIPT) },
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryLight),
+                                shape = RoundedCornerShape(10.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.ContentCut,
-                                    contentDescription = null,
-                                    tint = PrimaryLight,
-                                    modifier = Modifier.size(48.dp)
-                                )
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Text(
-                                    text = "暂无标记片段",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = PrimaryDark
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = "您可以前往【文稿】页面长按滑动选中文本一键创建片段，在此进行 0.1s 微调、试听和拼接导出",
-                                    fontSize = 13.sp,
-                                    color = TextSecondary,
-                                    textAlign = TextAlign.Center
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    Button(
-                                        onClick = {
-                                            mainViewModel.switchTab(PlayerTab.TRANSCRIPT)
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryLight),
-                                        shape = RoundedCornerShape(10.dp)
-                                    ) {
-                                        Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("前往文稿选词标记", fontSize = 13.sp)
-                                    }
-
-                                    // 空白状态下的新增片段按钮：在当前播放位置创建片段卡片
-                                    IconButton(onClick = { clipViewModel.createManualSegmentAtCurrentPos() }) {
-                                        Icon(Icons.Default.AddCircleOutline, contentDescription = "新建片段", tint = PrimaryLight)
-                                    }
-                                }
+                                Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("前往文稿选词标记", fontSize = 13.sp)
+                            }
+                            IconButton(onClick = { clipViewModel.createManualSegmentAtCurrentPos() }) {
+                                Icon(Icons.Default.AddCircleOutline, contentDescription = "新建片段", tint = PrimaryLight)
                             }
                         }
                     }
                 } else {
                     item {
-                        SegmentEditorHeader(
-                            segmentsCount = segments.size,
-                            selectedSegments = segments.filter { it.isSelected },
-                            isExporting = isExporting,
-                            exportProgress = exportProgress,
-                            isGeneratingMergedPreview = isGeneratingMergedPreview,
-                            mergedPreviewResult = mergedPreviewResult,
-                            isMergedPreviewPlaying = isMergedPreviewPlaying,
-                            mergedPreviewPositionMs = mergedPreviewPositionMs,
-                            mergedPreviewDurationMs = mergedPreviewDurationMs,
-                            onStartOrToggleMergedPreview = { clipViewModel.startOrToggleMergedPreview() },
-                            onSeekMergedPreview = { clipViewModel.seekMergedPreview(it) },
-                            onRewindMergedPreview = { clipViewModel.rewindMergedPreview(it) },
-                            onCloseMergedPreview = { clipViewModel.closeMergedPreview() },
+                        val selectedSegs = segments.filter { it.isSelected }
+                        EditorListHeaderCard(
+                            title = "标记片段列表 (${segments.size})",
+                            summary = "已选 ${selectedSegs.size} 段 · 预计时长: ${AudioItem.formatDuration(selectedSegs.sumOf { it.durationMs })}",
+                            accent = SecondaryTeal,
+                            selectedCount = selectedSegs.size,
+                            isBusy = isExporting,
+                            progress = exportProgress,
+                            isGeneratingPreview = isGeneratingMergedPreview,
+                            isPreviewPlaying = isMergedPreviewPlaying,
+                            previewResult = mergedPreviewResult,
+                            previewTitle = "剪辑预览 (${selectedSegs.size} 个片段)",
+                            previewPositionMs = mergedPreviewPositionMs,
+                            previewDurationMs = if (mergedPreviewDurationMs > 0) mergedPreviewDurationMs else selectedSegs.sumOf { it.durationMs },
+                            onTogglePreview = { clipViewModel.startOrToggleMergedPreview() },
+                            onSeekPreview = { clipViewModel.seekMergedPreview(it) },
+                            onRewindPreview = { clipViewModel.rewindMergedPreview(it) },
+                            onClosePreview = { clipViewModel.closeMergedPreview() },
                             onRenamePreviewFile = { clipViewModel.renamePreviewFile(it) },
                             onOverwriteOriginal = { clipViewModel.overwriteOriginalWithMerged() },
                             onSavePreview = { name, uri -> clipViewModel.savePreviewToLocation(name, uri) },
@@ -223,7 +189,6 @@ fun ClipScreen(mainViewModel: MainViewModel, clipViewModel: ClipViewModel, modif
                         SegmentItemCard(
                             segment = segment,
                             maxDurationMs = totalDuration,
-                            currentPositionMs = currentPositionMs,
                             isCurrentlyPreviewing = previewingSegmentId == segment.id && isPlaying,
                             onToggleSelect = { clipViewModel.toggleSegmentSelected(segment.id) },
                             onUpdateRange = { start, end -> clipViewModel.updateSegmentRange(segment.id, start, end) },

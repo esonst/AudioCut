@@ -2,8 +2,6 @@ package com.example.audiocut.ui.screens
 
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -26,14 +24,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.audiocut.data.model.AudioItem
 import com.example.audiocut.navigation.AppScreen
+import com.example.audiocut.ui.components.ClickableTimeLabel
 import com.example.audiocut.ui.components.FloatingPlayerBar
+import com.example.audiocut.ui.components.TimeWheelPickerDialog
+import com.example.audiocut.ui.components.formatTimePoint
 import com.example.audiocut.ui.components.ModelInstallDialogHost
 import com.example.audiocut.ui.components.OptimizedTranscriptView
 import com.example.audiocut.ui.theme.*
 import com.example.audiocut.viewmodel.ClipViewModel
 import com.example.audiocut.viewmodel.MainViewModel
 import com.example.audiocut.viewmodel.TranscriptViewModel
-import kotlin.math.abs
 
 /**
  * 文稿与音频剪辑页面
@@ -181,14 +181,14 @@ fun TranscriptScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("识别范围", fontSize = 11.sp, color = TextSecondary)
-                    RangeTimeLabel(
-                        text = "开始 ${formatHms(rangeStart / 1000)}",
+                    ClickableTimeLabel(
+                        text = "开始 ${formatTimePoint(rangeStart, false)}",
                         onClick = { editingRangeField = RangeField.START },
                         enabled = !isAsrLoading,
                         modifier = Modifier.weight(1f)
                     )
-                    RangeTimeLabel(
-                        text = "结束 ${formatHms(rangeEnd / 1000)}",
+                    ClickableTimeLabel(
+                        text = "结束 ${formatTimePoint(rangeEnd, false)}",
                         onClick = { editingRangeField = RangeField.END },
                         enabled = !isAsrLoading,
                         modifier = Modifier.weight(1f)
@@ -317,14 +317,15 @@ fun TranscriptScreen(
     val editingField = editingRangeField
     if (editingField != null && currentAudio != null) {
         val editingStart = editingField == RangeField.START
-        TimeScrollPickerDialog(
+        TimeWheelPickerDialog(
             title = if (editingStart) "设置开始时间" else "设置结束时间",
-            initialSeconds = (if (editingStart) rangeStart else rangeEnd) / 1000,
-            otherSeconds = (if (editingStart) rangeEnd else rangeStart) / 1000,
-            audioDurationSec = totalDuration / 1000,
+            initialMs = if (editingStart) rangeStart else rangeEnd,
+            otherMs = if (editingStart) rangeEnd else rangeStart,
             isStart = editingStart,
-            onConfirm = { totalSec ->
-                val ms = totalSec * 1000L
+            maxMs = totalDuration,
+            stepMs = 1000L,
+            showMillis = false,
+            onConfirm = { ms ->
                 if (editingStart) transcriptViewModel.setAsrStartMs(ms)
                 else transcriptViewModel.setAsrEndMs(ms)
                 editingRangeField = null
@@ -479,228 +480,3 @@ fun TranscriptHeaderView(
 
 /** 识别范围可编辑的时间字段 */
 private enum class RangeField { START, END }
-
-/**
- * 识别范围时间标签：点击弹出滚动时间选择卡片
- */
-@Composable
-private fun RangeTimeLabel(
-    text: String,
-    onClick: () -> Unit,
-    enabled: Boolean,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (enabled) PrimaryLight.copy(alpha = 0.10f) else SurfaceVariantLight)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = text,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            color = if (enabled) PrimaryLight else TextMuted,
-            maxLines = 1
-        )
-    }
-}
-
-/**
- * 时间滚动选择卡片：hh:mm:ss 三列滚轮，上下滚动调整
- */
-@Composable
-private fun TimeScrollPickerDialog(
-    title: String,
-    initialSeconds: Long,
-    otherSeconds: Long,
-    audioDurationSec: Long,
-    isStart: Boolean,
-    onConfirm: (totalSeconds: Long) -> Unit,
-    onReset: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    var totalSeconds by remember { mutableStateOf(initialSeconds.coerceAtLeast(0L)) }
-    var errorText by remember { mutableStateOf<String?>(null) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title, fontSize = 16.sp, fontWeight = FontWeight.Bold) },
-        text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = formatHms(totalSeconds),
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = PrimaryDark
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    TimeWheelColumn(
-                        value = (totalSeconds / 3600).toInt(),
-                        max = 999,
-                        label = "时",
-                        onValueChange = { h -> totalSeconds = h * 3600L + totalSeconds % 3600L }
-                    )
-                    WheelColon()
-                    TimeWheelColumn(
-                        value = ((totalSeconds % 3600) / 60).toInt(),
-                        max = 59,
-                        label = "分",
-                        onValueChange = { m -> totalSeconds = (totalSeconds / 3600) * 3600 + m * 60L + totalSeconds % 60L }
-                    )
-                    WheelColon()
-                    TimeWheelColumn(
-                        value = (totalSeconds % 60).toInt(),
-                        max = 59,
-                        label = "秒",
-                        onValueChange = { s -> totalSeconds = (totalSeconds / 60) * 60 + s }
-                    )
-                }
-                if (errorText != null) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(errorText!!, fontSize = 12.sp, color = Color(0xFFDC2626))
-                }
-                if (audioDurationSec > 0) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("音频总时长 ${formatHms(audioDurationSec)}", fontSize = 11.sp, color = TextMuted)
-                }
-                TextButton(
-                    onClick = { onReset() },
-                    modifier = Modifier.align(Alignment.End)
-                ) {
-                    Text("重置为整个音频", fontSize = 12.sp, color = PrimaryLight)
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                when {
-                    isStart && totalSeconds >= otherSeconds ->
-                        errorText = "开始时间必须早于结束时间"
-                    !isStart && totalSeconds <= otherSeconds ->
-                        errorText = "结束时间必须晚于开始时间"
-                    audioDurationSec > 0 && totalSeconds > audioDurationSec ->
-                        errorText = "时间不能超过音频总时长"
-                    else -> onConfirm(totalSeconds)
-                }
-            }) { Text("确定", color = PrimaryLight) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消", color = TextSecondary) }
-        }
-    )
-}
-
-/** 时:分:秒 之间的冒号，高度与滚轮一致并对齐中央选中行 */
-@Composable
-private fun WheelColon() {
-    Box(
-        modifier = Modifier.width(10.dp).height(120.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = ":",
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            color = PrimaryDark
-        )
-    }
-}
-
-/**
- * 单个时间滚轮列：上下滚动调整数值，松手由官方 SnapFlingBehavior 自动吸附到中央项
- */
-@Composable
-private fun TimeWheelColumn(
-    value: Int,
-    max: Int,
-    label: String,
-    onValueChange: (Int) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val itemHeight = 40.dp
-    val halfItems = 1
-    val listState = rememberLazyListState()
-    // 吸附交给官方实现：拖拽 / 惯性滚动结束后，最近一项自动停在视口中央
-    val flingBehavior = rememberSnapFlingBehavior(listState)
-
-    // 打开时一次性把初始值停在中央（contentPadding 上方留 halfItems 项，scrollToItem 后该项恰在中央槽）
-    LaunchedEffect(Unit) {
-        listState.scrollToItem(value.coerceIn(0, max))
-    }
-
-    // 选中项 = 视口中央最近的一项（item.offset 为内容坐标，需加上 viewportStartOffset 换算到视口中心）
-    val selectedIndex by remember {
-        derivedStateOf {
-            val info = listState.layoutInfo
-            if (info.visibleItemsInfo.isEmpty()) {
-                -1
-            } else {
-                val center = info.viewportStartOffset + info.viewportSize.height / 2
-                info.visibleItemsInfo.minByOrNull { item ->
-                    abs(item.offset + item.size / 2 - center)
-                }?.index ?: -1
-            }
-        }
-    }
-    LaunchedEffect(selectedIndex) {
-        if (selectedIndex in 0..max) onValueChange(selectedIndex)
-    }
-
-    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            modifier = Modifier
-                .width(64.dp)
-                .height(itemHeight * (halfItems * 2 + 1))
-        ) {
-            // 中央高亮条
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .fillMaxWidth()
-                    .height(itemHeight)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(PrimaryLight.copy(alpha = 0.12f))
-            )
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                flingBehavior = flingBehavior,
-                contentPadding = PaddingValues(vertical = itemHeight * halfItems)
-            ) {
-                items(max + 1) { index ->
-                    val selected = index == selectedIndex
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(itemHeight),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = index.toString().padStart(2, '0'),
-                            fontSize = if (selected) 20.sp else 16.sp,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (selected) PrimaryDark else TextMuted
-                        )
-                    }
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(label, fontSize = 11.sp, color = TextSecondary)
-    }
-}
-
-/** 秒数格式化为 hh:mm:ss */
-private fun formatHms(totalSec: Long): String {
-    val h = totalSec / 3600
-    val m = (totalSec % 3600) / 60
-    val s = totalSec % 60
-    return "%02d:%02d:%02d".format(h, m, s)
-}
