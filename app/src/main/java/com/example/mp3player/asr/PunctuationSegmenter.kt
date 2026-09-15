@@ -185,7 +185,7 @@ class PunctuationSegmenter {
         val cleaned = stripPunctuation(words)
         if (cleaned.isEmpty()) return emptyList()
 
-        val plain = cleaned.joinToString("") { it.word }
+        val plain = cleaned.joinToString("") { it.word }.replace(Regex("\\s+"), "")
         if (plain.isBlank()) return emptyList()
 
         onLog("智能分句：输入 ${words.size} 词 / ${plain.length} 字，开始恢复标点")
@@ -361,7 +361,9 @@ class PunctuationSegmenter {
         // 1. 构建"纯文本第N个字符 → 属于第几个词"的映射
         val charToWordIndex = mutableListOf<Int>()
         for (wordIdx in sourceWords.indices) {
-            repeat(sourceWords[wordIdx].word.length) {
+            val wordText = sourceWords[wordIdx].word
+            for (ch in wordText) {
+                if (ch.isWhitespace()) continue // 空格不占用映射位置
                 charToWordIndex.add(wordIdx)
             }
         }
