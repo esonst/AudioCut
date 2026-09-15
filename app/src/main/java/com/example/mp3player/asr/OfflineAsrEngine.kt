@@ -1,11 +1,7 @@
 package com.example.mp3player.asr
 
 import android.content.Context
-import com.example.mp3player.data.model.AudioItem
-import com.example.mp3player.data.model.TranscriptParagraph
-import com.example.mp3player.data.model.TranscriptResult
-import com.example.mp3player.data.model.TranscriptSentence
-import com.example.mp3player.data.model.TranscriptWord
+import com.example.mp3player.data.model.*
 import com.k2fsa.sherpa.onnx.OfflinePunctuation
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import com.k2fsa.sherpa.onnx.Vad
@@ -100,7 +96,7 @@ class OfflineAsrEngine(private val context: Context) {
     ): TranscriptResult = withContext(Dispatchers.Default) {
         onProgress(0.05f)
 
-        // 1. 准备 VAD 模型（assets 仅保留 silero_vad.int8.onnx）
+        // 1. 准备 VAD 模型
         val vadFile = if (config.useVad) modelManager.ensureVadModel() else null
         onProgress(0.10f)
         onLog(if (vadFile != null) "VAD：模型就绪，启用语音活动检测" else "VAD：未启用，整段识别")
