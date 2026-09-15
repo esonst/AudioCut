@@ -90,6 +90,7 @@ fun SegmentEditorHeader(
     onOverwriteOriginal: () -> Unit,
     onSavePreview: (String, Uri?) -> Unit,
     onSharePreview: () -> Unit,
+    onConvertPreview: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val selectedCount = selectedSegments.size
@@ -148,7 +149,8 @@ fun SegmentEditorHeader(
                         onRenameFile = onRenamePreviewFile,
                         onOverwrite = onOverwriteOriginal,
                         onSave = onSavePreview,
-                        onShare = onSharePreview
+                        onShare = onSharePreview,
+                        onConvert = onConvertPreview
                     )
                 }
             }
@@ -178,6 +180,7 @@ fun AudioPreviewCard(
     onOverwrite: () -> Unit,
     onSave: (String, Uri?) -> Unit,
     onShare: () -> Unit,
+    onConvert: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -287,7 +290,7 @@ fun AudioPreviewCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 底部操作按钮：覆盖 / 保存 / 分享
+            // 底部操作按钮：覆盖 / 保存 / 分享 / 格式转换
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Button(
                     onClick = { showOverwriteConfirm = true },
@@ -317,7 +320,11 @@ fun AudioPreviewCard(
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("保存", fontSize = 12.sp, maxLines = 1)
                 }
+            }
 
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedButton(
                     onClick = onShare,
                     enabled = !isBusy,
@@ -329,6 +336,19 @@ fun AudioPreviewCard(
                     Icon(Icons.Default.Share, null, modifier = Modifier.size(15.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("分享", fontSize = 12.sp, maxLines = 1)
+                }
+
+                OutlinedButton(
+                    onClick = onConvert,
+                    enabled = !isBusy,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = color),
+                    contentPadding = PaddingValues(horizontal = 4.dp)
+                ) {
+                    Icon(Icons.Default.SwapHoriz, null, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("格式转换", fontSize = 12.sp, maxLines = 1)
                 }
             }
 

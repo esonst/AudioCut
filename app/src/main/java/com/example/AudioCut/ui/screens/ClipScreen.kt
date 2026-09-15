@@ -209,7 +209,8 @@ fun ClipScreen(mainViewModel: MainViewModel, clipViewModel: ClipViewModel, modif
                             onRenamePreviewFile = { clipViewModel.renamePreviewFile(it) },
                             onOverwriteOriginal = { clipViewModel.overwriteOriginalWithMerged() },
                             onSavePreview = { name, uri -> clipViewModel.savePreviewToLocation(name, uri) },
-                            onSharePreview = { clipViewModel.shareMergedPreview() }
+                            onSharePreview = { clipViewModel.shareMergedPreview() },
+                            onConvertPreview = { mainViewModel.navigateToConvertFormat(mergedPreviewResult?.outputPath) }
                         )
                     }
 

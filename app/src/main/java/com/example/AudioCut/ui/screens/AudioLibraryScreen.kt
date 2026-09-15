@@ -380,6 +380,7 @@ fun AudioLibraryScreen(mainViewModel: MainViewModel, viewModel: AudioLibraryView
                                             onLongClick = { viewModel.toggleAudioSelection(audio.id) },
                                             onShare = { shareAudioFile(context, audio.filePath) },
                                             onSetRingtone = { RingtoneHelper.setAsRingtone(context, audio.filePath) },
+                                            onConvert = { mainViewModel.navigateToConvertFormat(audio.filePath) },
                                             onDelete = { deleteFile -> viewModel.deleteAudio(audio.id, deleteFile) },
                                             onClick = {
                                                 if (isSelectionMode) {
@@ -412,6 +413,7 @@ fun AudioLibraryScreen(mainViewModel: MainViewModel, viewModel: AudioLibraryView
                                                 onLongClick = { viewModel.toggleAudioSelection(audio.id) },
                                                 onShare = { shareAudioFile(context, audio.filePath) },
                                                 onSetRingtone = { RingtoneHelper.setAsRingtone(context, audio.filePath) },
+                                                onConvert = { mainViewModel.navigateToConvertFormat(audio.filePath) },
                                                 onDelete = { deleteFile -> viewModel.deleteAudio(audio.id, deleteFile) },
                                                 onClick = {
                                                     if (isSelectionMode) {
@@ -508,6 +510,7 @@ private fun AudioItemRowOptimized(
     onLongClick: () -> Unit = {},
     onShare: () -> Unit = {},
     onSetRingtone: () -> Unit = {},
+    onConvert: () -> Unit = {},
     onDelete: (Boolean) -> Unit = {},
     onClick: () -> Unit
 ) {
@@ -649,6 +652,14 @@ private fun AudioItemRowOptimized(
                 onClick = {
                     showLongPressMenu = false
                     onSetRingtone()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("格式转换") },
+                leadingIcon = { Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = PrimaryLight) },
+                onClick = {
+                    showLongPressMenu = false
+                    onConvert()
                 }
             )
             DropdownMenuItem(

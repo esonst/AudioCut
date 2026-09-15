@@ -216,7 +216,8 @@ fun TrimScreen(mainViewModel: MainViewModel, trimViewModel: TrimViewModel, modif
                             onRenamePreviewFile = { trimViewModel.renamePreviewFile(it) },
                             onOverwriteOriginal = { trimViewModel.overwriteOriginalWithTrim() },
                             onSavePreview = { name, uri -> trimViewModel.saveTrimPreviewAs(name, uri) },
-                            onShare = { trimViewModel.exportTrimAndShare() }
+                            onShare = { trimViewModel.exportTrimAndShare() },
+                            onConvert = { mainViewModel.navigateToConvertFormat(trimPreviewResult?.outputPath) }
                         )
                     }
 
@@ -296,7 +297,8 @@ private fun TrimEditorHeaderCard(
     onRenamePreviewFile: (String) -> Unit,
     onOverwriteOriginal: () -> Unit,
     onSavePreview: (String, Uri?) -> Unit,
-    onShare: () -> Unit
+    onShare: () -> Unit,
+    onConvert: () -> Unit
 ) {
     val selectedCount = selectedTrims.size
     val cutDuration = selectedTrims.sumOf { it.durationMs }
@@ -359,7 +361,8 @@ private fun TrimEditorHeaderCard(
                     onRenameFile = onRenamePreviewFile,
                     onOverwrite = onOverwriteOriginal,
                     onSave = onSavePreview,
-                    onShare = onShare
+                    onShare = onShare,
+                    onConvert = onConvert
                 )
             }
         }

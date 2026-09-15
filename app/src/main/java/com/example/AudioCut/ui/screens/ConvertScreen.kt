@@ -1,4 +1,4 @@
-package com.example.audiocut.ui.screens
+package com.example.AudioCut.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -22,10 +22,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.audiocut.data.model.AudioItem
 import com.example.audiocut.data.model.ConvertQuality
+import com.example.audiocut.navigation.AppScreen
 import com.example.audiocut.ui.components.ConversionProgressView
 import com.example.audiocut.ui.theme.*
 import com.example.audiocut.viewmodel.ConvertViewModel
 import com.example.audiocut.viewmodel.MainViewModel
+import java.io.File
+import java.text.DecimalFormat
 
 /**
  * 格式转换界面
@@ -62,7 +65,7 @@ fun ConvertScreen(mainViewModel: MainViewModel, convertViewModel: ConvertViewMod
     }
     // 默认输出文件名：前缀 "converted" + 原文件名
     val defaultOutputName = when {
-        convertInputFile != null -> "converted_${java.io.File(convertInputFile!!).nameWithoutExtension}"
+        convertInputFile != null -> "c_${File(convertInputFile!!).nameWithoutExtension}"
         currentAudio != null -> "c_${currentAudio!!.title.removeFileExtension()}"
         else -> null
     }
@@ -174,7 +177,7 @@ fun ConvertScreen(mainViewModel: MainViewModel, convertViewModel: ConvertViewMod
 
                 // 显示输入文件信息
                 if (convertInputFile != null) {
-                    val inputFile = java.io.File(convertInputFile!!)
+                    val inputFile = File(convertInputFile!!)
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = inputFile.name,
@@ -547,7 +550,7 @@ fun ConvertScreen(mainViewModel: MainViewModel, convertViewModel: ConvertViewMod
                     TextButton(
                         onClick = {
                             // 返回音频库选择
-                            mainViewModel.navigateTo(com.example.audiocut.navigation.AppScreen.AUDIO_LIBRARY)
+                            mainViewModel.navigateTo(AppScreen.AUDIO_LIBRARY)
                             showInputFileSelection = false
                         }
                     ) {
@@ -616,7 +619,7 @@ private fun QualityChip(
  * 格式化文件大小
  */
 private fun formatFileSize(bytes: Long): String {
-    val df = java.text.DecimalFormat("#.##")
+    val df = DecimalFormat("#.##")
     return when {
         bytes < 1024 -> "$bytes B"
         bytes < 1024 * 1024 -> "${df.format(bytes / 1024.0)} KB"

@@ -90,6 +90,15 @@ app/src/main/java/com/example/AudioCut/
 
 ## 快速开始
 
+### 📦 直接下载安装（推荐普通用户）
+
+如果不想自行编译，可以直接使用仓库中已构建好的 APK：
+
+- **APK 路径**：`app/release/AudioCut.apk`
+- 下载后传输到 Android 设备（Android 7.0+，arm64-v8a）安装即可
+
+### 🔨 从源码构建
+
 1. 克隆仓库：
 
 ```bash
