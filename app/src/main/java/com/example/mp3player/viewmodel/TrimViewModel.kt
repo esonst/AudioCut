@@ -1,6 +1,9 @@
 package com.example.mp3player.viewmodel
 
 import android.app.Application
+import android.media.MediaMetadataRetriever
+import android.net.Uri
+import android.os.Environment
 import androidx.lifecycle.viewModelScope
 import com.example.mp3player.core.AppEventBus
 import com.example.mp3player.data.model.*
@@ -96,6 +99,19 @@ class TrimViewModel(
         viewModelScope.launch {
             eventBus.stopAllPreview.collect {
                 stopAllPreview()
+            }
+        }
+        // 音频被覆盖后（来自剪辑页等），若正是当前音频则清空裁剪区间与预览状态
+        viewModelScope.launch {
+            eventBus.audioOverwritten.collect { event ->
+                if (currentPlayingAudio.value?.id == event.audioId) {
+                    previewJob?.cancel()
+                    previewJob = null
+                    _previewingSegmentId.value = null
+                    trimPreviewPlayer.pause()
+                    _trimRanges.value = emptyList()
+                    _trimPreviewResult.value = null
+                }
             }
         }
     }
@@ -294,6 +310,72 @@ class TrimViewModel(
         _trimPreviewResult.value = null
     }
 
+    /** 重命名当前裁剪预览文件（缓存目录内），供预览卡片铅笔按钮调用 */
+    fun renamePreviewFile(newBaseName: String) {
+        val preview = _trimPreviewResult.value ?: return
+        if (!preview.isSuccess) return
+        val oldFile = File(preview.outputPath)
+        if (!oldFile.exists()) return
+        var cleanName = newBaseName.trim().replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        if (cleanName.endsWith(".${oldFile.extension}", ignoreCase = true)) {
+            cleanName = cleanName.dropLast(oldFile.extension.length + 1)
+        }
+        if (cleanName.isBlank()) return
+        val newFile = File(oldFile.parentFile ?: return, "$cleanName.${oldFile.extension}")
+        if (newFile == oldFile) return
+        if (oldFile.renameTo(newFile)) {
+            _trimPreviewResult.value = preview.copy(outputPath = newFile.absolutePath)
+            emitToast("预览文件已重命名为 ${newFile.name}")
+        } else {
+            emitToast("重命名失败")
+        }
+    }
+
+    /** 将裁剪预览保存到指定位置（SAF Uri）或默认音频目录，供预览卡片【保存】调用 */
+    fun saveTrimPreviewAs(customName: String, targetUri: Uri? = null) {
+        val preview = _trimPreviewResult.value ?: return
+        if (!preview.isSuccess) return
+        val source = File(preview.outputPath)
+        if (!source.exists()) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (targetUri != null) {
+                    getApplication<Application>().contentResolver.openOutputStream(targetUri)?.use { out ->
+                        source.inputStream().use { it.copyTo(out) }
+                    }
+                    withContext(Dispatchers.Main) { emitToast("已保存至所选位置") }
+                } else {
+                    val dir = getApplication<Application>().getExternalFilesDir(Environment.DIRECTORY_MUSIC)
+                        ?: Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+                    val name = customName.ifBlank { "Trim_${System.currentTimeMillis()}" }
+                        .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                    val target = File(dir, "$name.${source.extension}")
+                    source.copyTo(target, overwrite = true)
+                    withContext(Dispatchers.Main) { emitToast("已保存至: ${target.absolutePath}") }
+                }
+                withContext(Dispatchers.Main) { eventBus.notifyAudioLibraryChanged() }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { emitToast("保存失败: ${e.message}") }
+            }
+        }
+    }
+
+    /** 读取本地音频文件时长（毫秒） */
+    private fun queryAudioDurationMs(path: String): Long {
+        return try {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(path)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            } finally {
+                runCatching { retriever.release() }
+            }
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
     // 预览播放器控制（UI 层调用）
     fun seekMergedPreview(posMs: Long) = trimPreviewPlayer.seekTo(posMs)
     fun rewindMergedPreview(seconds: Int) = trimPreviewPlayer.fastForwardOrRewind(seconds)
@@ -416,17 +498,39 @@ class TrimViewModel(
                     return@launch
                 }
 
-                val sourceFile = File(audio.filePath)
-                val newFile = File(result.outputPath)
-                if (!sourceFile.exists() || !sourceFile.isFile) {
-                    emitToast("原文件不可直接覆盖，请使用【另存为】")
+                // 文件级 IO（覆盖写入、读时长、读大小）放到 IO 线程，避免大文件阻塞主线程
+                val duration = withContext(Dispatchers.IO) {
+                    val sourceFile = File(audio.filePath)
+                    val newFile = File(result.outputPath)
+                    if (!sourceFile.exists() || !sourceFile.isFile) {
+                        null
+                    } else {
+                        newFile.copyTo(sourceFile, overwrite = true)
+                        newFile.delete()
+                        queryAudioDurationMs(sourceFile.absolutePath).coerceAtLeast(result.durationMs)
+                    }
+                }
+                if (duration == null) {
+                    emitToast("原文件不可直接覆盖，请使用【保存】")
                     return@launch
                 }
 
-                newFile.copyTo(sourceFile, overwrite = true)
-                newFile.delete()
-                emitToast("已覆盖原文件：${audio.title}")
+                // 刷新当前音频元信息（时长/大小/修改时间）
+                val updated = audio.copy(
+                    durationMs = duration,
+                    sizeBytes = File(audio.filePath).length(),
+                    dateModifiedSec = System.currentTimeMillis() / 1000
+                )
+                playerManager.updateCurrentAudioMetadata(updated)
+
+                // 清除关联数据：文稿、剪辑片段、裁剪片段、转换格式记录、收藏等
+                prefs.deleteAudioData(audio.id)
+                _trimRanges.value = emptyList()
+                _trimPreviewResult.value = null
+
+                eventBus.notifyAudioOverwritten(audio.id, audio.filePath)
                 eventBus.notifyAudioLibraryChanged()
+                emitToast("已覆盖原文件：${audio.title}")
             } catch (e: Exception) {
                 emitToast("覆盖原文件失败: ${e.localizedMessage}")
             } finally {

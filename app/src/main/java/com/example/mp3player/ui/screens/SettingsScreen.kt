@@ -215,7 +215,7 @@ fun SettingsScreen(mainViewModel: MainViewModel, settingsViewModel: SettingsView
                 SettingsActionItem(
                     icon = Icons.Default.FolderDelete,
                     title = "清理导出音频",
-                    subtitle = "删除导出目录下的所有合并文件",
+                    subtitle = "刷新音频库，清理已失去文件位置的失效记录",
                     actionLabel = "清理",
                     onClick = {
                         settingsViewModel.clearAllExports()

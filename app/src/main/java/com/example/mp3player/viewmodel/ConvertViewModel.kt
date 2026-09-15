@@ -75,6 +75,22 @@ class ConvertViewModel(
                 }
             }
         }
+
+        // 当前音频被【覆盖】后，若转换输入关联该音频则清空转换状态与输入，避免残留旧文件记录
+        viewModelScope.launch {
+            eventBus.audioOverwritten.collect { event ->
+                val input = convertInputFile.value
+                val currentPath = currentPlayingAudio.value?.filePath
+                val related = input == event.filePath || (input == null && currentPath == event.filePath)
+                if (related) {
+                    conversionPollJob?.cancel()
+                    convertCancelled = false
+                    convertSessionId = -1L
+                    if (input == event.filePath) _convertInputFile.value = null
+                    _convertState.value = ConvertState()
+                }
+            }
+        }
     }
 
     fun setConvertInputFile(path: String?) {

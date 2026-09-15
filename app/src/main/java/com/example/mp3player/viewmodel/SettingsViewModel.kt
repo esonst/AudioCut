@@ -2,12 +2,12 @@ package com.example.mp3player.viewmodel
 
 import android.app.Application
 import android.net.Uri
-import android.os.Environment
 import androidx.lifecycle.viewModelScope
 import com.example.mp3player.asr.AsrManager
 import com.example.mp3player.asr.ModelInstallCoordinator
 import com.example.mp3player.asr.ModelManager
 import com.example.mp3player.core.AppEventBus
+import com.example.mp3player.data.repository.AudioRepository
 import com.example.mp3player.data.repository.PreferencesRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,7 +28,8 @@ class SettingsViewModel(
     eventBus: AppEventBus,
     private val prefs: PreferencesRepository,
     private val asrManager: AsrManager,
-    private val modelManager: ModelManager
+    private val modelManager: ModelManager,
+    private val audioRepository: AudioRepository
 ) : BaseViewModel(application, eventBus) {
 
     // ==================== 文稿转写开关 ====================
@@ -225,15 +226,29 @@ class SettingsViewModel(
         emitToast("所有文稿缓存已清理")
     }
 
-    /** 清空所有导出文件 */
+    /**
+     * 清理导出音频：不清空音频库中的所有文件，仅刷新音频库，
+     * 并移除已失去文件位置的失效记录（文件被外部删除、路径已不存在的条目）
+     */
     fun clearAllExports() {
         viewModelScope.launch(Dispatchers.IO) {
-            val dir = getApplication<Application>().getExternalFilesDir(Environment.DIRECTORY_MUSIC)
-            var count = 0
-            dir?.listFiles()?.forEach { if (it.isFile) { it.delete(); count++ } }
-            withContext(Dispatchers.Main) {
-                emitToast("已清理 $count 个导出文件")
-                eventBus.notifyAudioLibraryChanged()
+            try {
+                val before = prefs.getAudioLibraryCache()
+                val refreshed = audioRepository.scanImportedAudios()
+                prefs.saveAudioLibraryCache(refreshed)
+                prefs.cleanupHiddenFilePaths()
+                val removedCount = (before.size - refreshed.size).coerceAtLeast(0)
+                withContext(Dispatchers.Main) {
+                    emitToast(
+                        if (removedCount > 0) "音频库已刷新，清理了 $removedCount 条失效音频"
+                        else "音频库已刷新，未发现失效音频"
+                    )
+                    eventBus.notifyAudioLibraryChanged()
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    emitToast("刷新音频库失败: ${e.message}")
+                }
             }
         }
     }

@@ -94,6 +94,15 @@ class TranscriptViewModel(
                 _selectedWordIds.value = emptySet()
             }
         }
+        // 当前音频被【覆盖】后清除内存中的文稿（原文稿已随覆盖一并清除）
+        viewModelScope.launch {
+            eventBus.audioOverwritten.collect { event ->
+                if (currentPlayingAudio.value?.id == event.audioId) {
+                    _transcriptResult.value = null
+                    _selectedWordIds.value = emptySet()
+                }
+            }
+        }
     }
 
     fun setSelectedTextRange(range: androidx.compose.ui.text.TextRange?) {

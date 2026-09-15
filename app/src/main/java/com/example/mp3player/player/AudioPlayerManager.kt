@@ -386,6 +386,15 @@ class AudioPlayerManager(
         }
     }
 
+    /**
+     * 覆盖写入后刷新当前音频元信息（时长/大小/修改时间）
+     * 仅更新状态流，不重建播放器，保证覆盖后音频库与界面显示同步
+     */
+    fun updateCurrentAudioMetadata(updated: AudioItem) {
+        _currentAudio.value = updated
+        _playlist.value = _playlist.value.map { if (it.id == updated.id) updated else it }
+    }
+
     fun release() {
         progressJob?.cancel()
         scope.cancel()

@@ -1,4 +1,4 @@
-﻿package com.example.mp3player.ui.screens
+package com.example.mp3player.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -45,7 +45,6 @@ fun ClipScreen(mainViewModel: MainViewModel, clipViewModel: ClipViewModel, modif
     val previewingSegmentId by clipViewModel.previewingSegmentId.collectAsState()
     val isExporting by clipViewModel.isExporting.collectAsState()
     val exportProgress by clipViewModel.exportProgress.collectAsState()
-    val exportResult by clipViewModel.exportResult.collectAsState()
 
     // 合并试听状态
     val isGeneratingMergedPreview by clipViewModel.isGeneratingMergedPreview.collectAsState()
@@ -53,7 +52,6 @@ fun ClipScreen(mainViewModel: MainViewModel, clipViewModel: ClipViewModel, modif
     val isMergedPreviewPlaying by clipViewModel.isMergedPreviewPlaying.collectAsState()
     val mergedPreviewPositionMs by clipViewModel.mergedPreviewPositionMs.collectAsState()
     val mergedPreviewDurationMs by clipViewModel.mergedPreviewDurationMs.collectAsState()
-    val mergedPreviewSpeed by clipViewModel.mergedPreviewSpeed.collectAsState()
 
     val totalDuration = if (durationMs > 0) durationMs else currentAudio?.durationMs ?: 0L
 
@@ -197,26 +195,19 @@ fun ClipScreen(mainViewModel: MainViewModel, clipViewModel: ClipViewModel, modif
                             selectedSegments = segments.filter { it.isSelected },
                             isExporting = isExporting,
                             exportProgress = exportProgress,
-                            exportResult = exportResult,
                             isGeneratingMergedPreview = isGeneratingMergedPreview,
                             mergedPreviewResult = mergedPreviewResult,
                             isMergedPreviewPlaying = isMergedPreviewPlaying,
                             mergedPreviewPositionMs = mergedPreviewPositionMs,
                             mergedPreviewDurationMs = mergedPreviewDurationMs,
-                            mergedPreviewSpeed = mergedPreviewSpeed,
                             onStartOrToggleMergedPreview = { clipViewModel.startOrToggleMergedPreview() },
-                            onExportMerged = { name, format -> clipViewModel.exportMergedSegments(name, format) },
-                            onPlayMergedPreview = { clipViewModel.playMergedPreview() },
-                            onPauseMergedPreview = { clipViewModel.pauseMergedPreview() },
                             onSeekMergedPreview = { clipViewModel.seekMergedPreview(it) },
                             onRewindMergedPreview = { clipViewModel.rewindMergedPreview(it) },
-                            onSetMergedPreviewSpeed = { clipViewModel.setMergedPreviewSpeed(it) },
                             onCloseMergedPreview = { clipViewModel.closeMergedPreview() },
-                            onSaveToLibrary = { clipViewModel.saveMergedPreviewToLibrary(it) },
-                            onConvertFormat = { 
-                                val path = mergedPreviewResult?.takeIf { it.isSuccess }?.outputPath?.takeIf { it.isNotEmpty() }
-                                mainViewModel.navigateToConvertFormat(path)
-                            }
+                            onRenamePreviewFile = { clipViewModel.renamePreviewFile(it) },
+                            onOverwriteOriginal = { clipViewModel.overwriteOriginalWithMerged() },
+                            onSavePreview = { name, uri -> clipViewModel.savePreviewToLocation(name, uri) },
+                            onSharePreview = { clipViewModel.shareMergedPreview() }
                         )
                     }
 

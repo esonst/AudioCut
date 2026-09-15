@@ -67,4 +67,15 @@ class AppEventBus {
     fun sendStopAllPreview() {
         _stopAllPreview.tryEmit(Unit)
     }
+
+    // ==================== 音频被覆盖事件 ====================
+    /** 音频被【覆盖】后广播：携带音频 ID 与文件路径，通知文稿/剪辑/裁剪/转换等模块清理关联状态 */
+    data class AudioOverwrittenEvent(val audioId: Long, val filePath: String)
+
+    private val _audioOverwritten = MutableSharedFlow<AudioOverwrittenEvent>(extraBufferCapacity = 1)
+    val audioOverwritten: SharedFlow<AudioOverwrittenEvent> = _audioOverwritten.asSharedFlow()
+
+    fun notifyAudioOverwritten(audioId: Long, filePath: String) {
+        _audioOverwritten.tryEmit(AudioOverwrittenEvent(audioId, filePath))
+    }
 }

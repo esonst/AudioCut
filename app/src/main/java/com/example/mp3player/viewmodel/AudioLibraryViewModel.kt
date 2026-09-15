@@ -107,6 +107,12 @@ class AudioLibraryViewModel(
     init {
         scanAudios()
         observeSaveState()
+        // 监听全局音频库变化事件（覆盖/保存/清理导出后），自动刷新列表以同步最新元信息与失效条目
+        viewModelScope.launch {
+            eventBus.audioLibraryChanged.collect {
+                scanAudios(force = true, notify = false)
+            }
+        }
         // 列表加载完成后恢复播放状态
         viewModelScope.launch {
             _allAudios.filter { it.isNotEmpty() }.first()
@@ -131,8 +137,8 @@ class AudioLibraryViewModel(
         }
     }
 
-    /** 扫描音频库 */
-    fun scanAudios(force: Boolean = false) {
+    /** 扫描音频库；notify=false 表示本次扫描由库变化事件触发，避免事件循环 */
+    fun scanAudios(force: Boolean = false, notify: Boolean = true) {
         if (!force && _allAudios.value.isNotEmpty()) return
 
         if (!force && _allAudios.value.isEmpty()) {
@@ -150,7 +156,7 @@ class AudioLibraryViewModel(
 
             prefs.saveAudioLibraryCache(list)
             prefs.cleanupHiddenFilePaths()
-            eventBus.notifyAudioLibraryChanged()
+            if (notify) eventBus.notifyAudioLibraryChanged()
         }
     }
 

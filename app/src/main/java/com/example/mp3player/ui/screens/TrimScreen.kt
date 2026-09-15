@@ -1,5 +1,6 @@
-﻿package com.example.mp3player.ui.screens
+package com.example.mp3player.ui.screens
 
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mp3player.data.model.AudioItem
 import com.example.mp3player.data.model.AudioSegment
+import com.example.mp3player.ui.components.AudioPreviewCard
 import com.example.mp3player.ui.theme.*
 import com.example.mp3player.navigation.AppScreen
 import com.example.mp3player.viewmodel.MainViewModel
@@ -35,6 +37,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
@@ -209,13 +212,10 @@ fun TrimScreen(mainViewModel: MainViewModel, trimViewModel: TrimViewModel, modif
                             onSeekPreview = { trimViewModel.seekMergedPreview(it) },
                             onRewindPreview = { trimViewModel.rewindMergedPreview(it) },
                             onClosePreview = { trimViewModel.closeTrimPreview() },
+                            onRenamePreviewFile = { trimViewModel.renamePreviewFile(it) },
                             onOverwriteOriginal = { trimViewModel.overwriteOriginalWithTrim() },
-                            onSaveAs = { trimViewModel.saveTrimAs(it) },
-                            onShare = { trimViewModel.exportTrimAndShare() },
-                            onConvertFormat = { 
-                                val path = trimPreviewResult?.takeIf { it.isSuccess }?.outputPath?.takeIf { it.isNotEmpty() }
-                                mainViewModel.navigateToConvertFormat(path)
-                            }
+                            onSavePreview = { name, uri -> trimViewModel.saveTrimPreviewAs(name, uri) },
+                            onShare = { trimViewModel.exportTrimAndShare() }
                         )
                     }
 
@@ -273,7 +273,8 @@ fun TrimScreen(mainViewModel: MainViewModel, trimViewModel: TrimViewModel, modif
 }
 
 /**
- * 裁剪页面顶部控制卡片：预览（剪掉所选部分拼接播放）、覆盖原文件、另存为、分享
+ * 裁剪页面顶部控制卡片：预览（剪掉所选部分拼接播放）、覆盖原文件、保存、分享
+ * 预览卡片与【剪辑】共用 AudioPreviewCard，仅主题色不同（TrimRed）
  */
 @Composable
 private fun TrimEditorHeaderCard(
@@ -291,15 +292,11 @@ private fun TrimEditorHeaderCard(
     onSeekPreview: (Long) -> Unit,
     onRewindPreview: (Int) -> Unit,
     onClosePreview: () -> Unit,
+    onRenamePreviewFile: (String) -> Unit,
     onOverwriteOriginal: () -> Unit,
-    onSaveAs: (String) -> Unit,
-    onShare: () -> Unit,
-    onConvertFormat: () -> Unit
+    onSavePreview: (String, Uri?) -> Unit,
+    onShare: () -> Unit
 ) {
-    var showSaveAsDialog by remember { mutableStateOf(false) }
-    var saveAsFileName by remember { mutableStateOf("裁剪音频_${System.currentTimeMillis() / 1000}") }
-    var showOverwriteConfirm by remember { mutableStateOf(false) }
-
     val selectedCount = selectedTrims.size
     val cutDuration = selectedTrims.sumOf { it.durationMs }
     val remainDuration = (totalDurationMs - cutDuration).coerceAtLeast(0L)
@@ -342,178 +339,27 @@ private fun TrimEditorHeaderCard(
                 }
             }
 
-            // 只有生成预览成功后才显示 预览播放器 与 覆盖原文件 / 另存为 / 分享 三个导出按钮
+            // 只有生成预览成功后才显示统一预览卡片（覆盖 / 保存 / 分享）
             if (trimPreviewResult != null && trimPreviewResult.isSuccess) {
                 Spacer(modifier = Modifier.height(12.dp))
-                TrimPreviewPlayerCard(
+                AudioPreviewCard(
+                    title = "裁剪预览 (剪掉 $selectedCount 段)",
+                    previewFileName = File(trimPreviewResult.outputPath).name,
+                    color = TrimRed,
                     isPlaying = isPreviewPlaying,
                     currentPositionMs = previewPositionMs,
                     durationMs = if (previewDurationMs > 0) previewDurationMs else remainDuration,
-                    segmentCount = selectedCount,
+                    isBusy = isTrimExporting,
+                    progress = trimExportProgress,
                     onTogglePlayPause = onStartOrTogglePreview,
                     onSeekTo = onSeekPreview,
                     onRewind = onRewindPreview,
-                    onClose = onClosePreview
+                    onClose = onClosePreview,
+                    onRenameFile = onRenamePreviewFile,
+                    onOverwrite = onOverwriteOriginal,
+                    onSave = onSavePreview,
+                    onShare = onShare
                 )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // 四个导出操作按钮：覆盖原文件 / 另存为 / 分享 / 转换格式
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(
-                        onClick = { showOverwriteConfirm = true },
-                        enabled = !isTrimExporting && selectedCount > 0,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = TrimRed),
-                        shape = RoundedCornerShape(10.dp),
-                        contentPadding = PaddingValues(horizontal = 4.dp)
-                    ) {
-                        Icon(Icons.Default.Save, null, modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("覆盖原文件", fontSize = 11.sp, maxLines = 1)
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            saveAsFileName = "裁剪音频_${System.currentTimeMillis() / 1000}"
-                            showSaveAsDialog = true
-                        },
-                        enabled = !isTrimExporting && selectedCount > 0,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TrimRed),
-                        contentPadding = PaddingValues(horizontal = 4.dp)
-                    ) {
-                        Icon(Icons.Default.FileCopy, null, modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("另存为", fontSize = 11.sp, maxLines = 1)
-                    }
-
-                    OutlinedButton(
-                        onClick = onShare,
-                        enabled = !isTrimExporting && selectedCount > 0,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TrimRed),
-                        contentPadding = PaddingValues(horizontal = 4.dp)
-                    ) {
-                        Icon(Icons.Default.Share, null, modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("分享", fontSize = 11.sp, maxLines = 1)
-                    }
-
-                    OutlinedButton(
-                        onClick = { onConvertFormat() },
-                        enabled = !isTrimExporting && selectedCount > 0,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TrimRed),
-                        contentPadding = PaddingValues(horizontal = 4.dp)
-                    ) {
-                        Icon(Icons.Default.AudioFile, null, modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("转换格式", fontSize = 11.sp, maxLines = 1)
-                    }
-                }
-            }
-
-            if (isTrimExporting) {
-                Spacer(modifier = Modifier.height(10.dp))
-                LinearProgressIndicator(
-                    progress = { trimExportProgress },
-                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
-                    color = TrimRed
-                )
-            }
-        }
-    }
-
-    if (showOverwriteConfirm) {
-        AlertDialog(
-            onDismissRequest = { showOverwriteConfirm = false },
-            title = { Text("覆盖原文件") },
-            text = { Text("确认将原音频中已选的 $selectedCount 段剪掉并覆盖原文件？此操作不可撤销。", fontSize = 14.sp) },
-            confirmButton = {
-                Button(
-                    onClick = { onOverwriteOriginal(); showOverwriteConfirm = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = TrimRed)
-                ) { Text("确认覆盖") }
-            },
-            dismissButton = { TextButton(onClick = { showOverwriteConfirm = false }) { Text("取消") } }
-        )
-    }
-
-    if (showSaveAsDialog) {
-        AlertDialog(
-            onDismissRequest = { showSaveAsDialog = false },
-            title = { Text("另存为") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = saveAsFileName, onValueChange = { saveAsFileName = it }, label = { Text("文件名") }, singleLine = true)
-                    Text("将剪掉所选部分后的内容保存为新文件，格式与原文件一致", fontSize = 11.sp, color = TextSecondary)
-                }
-            },
-            confirmButton = {
-                Button(onClick = { onSaveAs(saveAsFileName.trim()); showSaveAsDialog = false }) { Text("保存") }
-            },
-            dismissButton = { TextButton(onClick = { showSaveAsDialog = false }) { Text("取消") } }
-        )
-    }
-}
-
-/**
- * 裁剪预览播放器卡片（淡红色风格）
- */
-@Composable
-private fun TrimPreviewPlayerCard(
-    isPlaying: Boolean,
-    currentPositionMs: Long,
-    durationMs: Long,
-    segmentCount: Int,
-    onTogglePlayPause: () -> Unit,
-    onSeekTo: (Long) -> Unit,
-    onRewind: (Int) -> Unit,
-    onClose: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = TrimRed.copy(alpha = 0.08f)),
-        border = BorderStroke(1.dp, TrimRed.copy(alpha = 0.3f))
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(text = "裁剪预览 (剪掉 $segmentCount 段)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TrimRedDark)
-                IconButton(onClick = onClose, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Close, null, modifier = Modifier.size(16.dp)) }
-            }
-
-            Slider(
-                value = currentPositionMs.toFloat(),
-                onValueChange = { onSeekTo(it.toLong()) },
-                valueRange = 0f..maxOf(1f, durationMs.toFloat()),
-                colors = SliderDefaults.colors(
-                    thumbColor = TrimRed,
-                    activeTrackColor = TrimRed,
-                    inactiveTrackColor = Color(0xFFE5E7EB)
-                ),
-                modifier = Modifier.height(24.dp)
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(text = AudioItem.formatDuration(currentPositionMs), fontSize = 10.sp, color = TrimRedDark)
-                Text(text = AudioItem.formatDuration(durationMs), fontSize = 10.sp, color = TrimRedDark)
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { onRewind(-5) }) { Icon(Icons.Default.Replay5, null) }
-                FilledIconButton(onClick = onTogglePlayPause, colors = IconButtonDefaults.filledIconButtonColors(containerColor = TrimRed)) {
-                    Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null)
-                }
-                IconButton(onClick = { onRewind(5) }) { Icon(Icons.Default.Forward5, null) }
             }
         }
     }

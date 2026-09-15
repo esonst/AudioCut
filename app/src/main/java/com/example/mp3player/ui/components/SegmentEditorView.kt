@@ -1,7 +1,10 @@
 package com.example.mp3player.ui.components
 
-import android.content.Context
-import android.content.Intent
+import android.net.Uri
+import android.os.Environment
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -21,12 +24,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.FileProvider
 import com.example.mp3player.data.model.AudioItem
 import com.example.mp3player.data.model.AudioSegment
-import com.example.mp3player.ffmpeg.ExportAudioFormat
 import com.example.mp3player.ffmpeg.ExportResult
 import com.example.mp3player.ui.theme.*
 import kotlinx.coroutines.coroutineScope
@@ -34,7 +36,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
-import kotlin.math.max
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
@@ -68,33 +69,28 @@ fun Modifier.continuousPress(
 }
 
 /**
- * 剪辑页面顶部控制区域：预览、导出、新建片段及合并预览控制器
+ * 剪辑页面顶部控制区域：预览触发 + 统一预览卡片（覆盖/保存/分享）
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SegmentEditorHeader(
     segmentsCount: Int,
     selectedSegments: List<AudioSegment>,
     isExporting: Boolean,
     exportProgress: Float,
-    exportResult: ExportResult?,
-    onExportMerged: (String, ExportAudioFormat) -> Unit,
-    modifier: Modifier = Modifier,
-    isGeneratingMergedPreview: Boolean = false,
-    mergedPreviewResult: ExportResult? = null,
-    isMergedPreviewPlaying: Boolean = false,
-    mergedPreviewPositionMs: Long = 0L,
-    mergedPreviewDurationMs: Long = 0L,
-    mergedPreviewSpeed: Float = 1.0f,
-    onStartOrToggleMergedPreview: () -> Unit = {},
-    onPlayMergedPreview: () -> Unit = {},
-    onPauseMergedPreview: () -> Unit = {},
-    onSeekMergedPreview: (Long) -> Unit = {},
-    onRewindMergedPreview: (Int) -> Unit = {},
-    onSetMergedPreviewSpeed: (Float) -> Unit = {},
-    onCloseMergedPreview: () -> Unit = {},
-    onSaveToLibrary: (String) -> Unit = {},
-    onConvertFormat: () -> Unit = {}
+    isGeneratingMergedPreview: Boolean,
+    mergedPreviewResult: ExportResult?,
+    isMergedPreviewPlaying: Boolean,
+    mergedPreviewPositionMs: Long,
+    mergedPreviewDurationMs: Long,
+    onStartOrToggleMergedPreview: () -> Unit,
+    onSeekMergedPreview: (Long) -> Unit,
+    onRewindMergedPreview: (Int) -> Unit,
+    onCloseMergedPreview: () -> Unit,
+    onRenamePreviewFile: (String) -> Unit,
+    onOverwriteOriginal: () -> Unit,
+    onSavePreview: (String, Uri?) -> Unit,
+    onSharePreview: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val selectedCount = selectedSegments.size
     val totalExportDuration = selectedSegments.sumOf { it.durationMs }
@@ -117,100 +113,155 @@ fun SegmentEditorHeader(
                         Text(text = "已选 $selectedCount 段 · 预计时长: ${AudioItem.formatDuration(totalExportDuration)}", fontSize = 12.sp, color = TextSecondary)
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = onStartOrToggleMergedPreview,
-                            enabled = !isExporting && selectedCount > 0 && !isGeneratingMergedPreview,
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = SecondaryTeal)
-                        ) {
-                            if (isGeneratingMergedPreview) {
-                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = SecondaryTeal)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("生成中", fontSize = 12.sp)
-                            } else {
-                                Icon(if (isMergedPreviewPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, modifier = Modifier.size(15.dp))
-                                Text(if (mergedPreviewResult != null) "试听" else "预览", fontSize = 12.sp)
-                            }
+                    OutlinedButton(
+                        onClick = onStartOrToggleMergedPreview,
+                        enabled = !isExporting && selectedCount > 0 && !isGeneratingMergedPreview,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = SecondaryTeal)
+                    ) {
+                        if (isGeneratingMergedPreview) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = SecondaryTeal)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("生成中", fontSize = 12.sp)
+                        } else {
+                            Icon(if (isMergedPreviewPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, modifier = Modifier.size(15.dp))
+                            Text(if (mergedPreviewResult != null) "试听" else "预览", fontSize = 12.sp)
                         }
-
                     }
                 }
 
                 if (mergedPreviewResult != null && mergedPreviewResult.isSuccess) {
                     Spacer(modifier = Modifier.height(12.dp))
-                    MergedPreviewPlayerCard(
+                    AudioPreviewCard(
+                        title = "剪辑预览 ($selectedCount 个片段)",
+                        previewFileName = File(mergedPreviewResult.outputPath).name,
+                        color = SecondaryTeal,
                         isPlaying = isMergedPreviewPlaying,
                         currentPositionMs = mergedPreviewPositionMs,
                         durationMs = if (mergedPreviewDurationMs > 0) mergedPreviewDurationMs else totalExportDuration,
-                        playbackSpeed = mergedPreviewSpeed,
-                        segmentCount = selectedCount,
+                        isBusy = isExporting,
+                        progress = exportProgress,
                         onTogglePlayPause = onStartOrToggleMergedPreview,
                         onSeekTo = onSeekMergedPreview,
                         onRewind = onRewindMergedPreview,
-                        onSetSpeed = onSetMergedPreviewSpeed,
                         onClose = onCloseMergedPreview,
-                        onSaveToLibrary = onSaveToLibrary,
-                        isExporting = isExporting,
-                        onExportMerged = onExportMerged,
-                        onConvertFormat = onConvertFormat,
-                        mergedPreviewResult = mergedPreviewResult
+                        onRenameFile = onRenamePreviewFile,
+                        onOverwrite = onOverwriteOriginal,
+                        onSave = onSavePreview,
+                        onShare = onSharePreview
                     )
                 }
             }
         }
     }
-
 }
 
 /**
- * 预览播放器卡片
+ * 预览卡片（【剪辑】与【裁剪】共用同一个实现，仅主题色不同）
+ * 顶部展示预览文件名标签 + 铅笔重命名；底部提供 覆盖 / 保存 / 分享 三个操作
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MergedPreviewPlayerCard(
+fun AudioPreviewCard(
+    title: String,
+    previewFileName: String,
+    color: Color,
     isPlaying: Boolean,
     currentPositionMs: Long,
     durationMs: Long,
-    playbackSpeed: Float,
-    segmentCount: Int,
+    isBusy: Boolean,
+    progress: Float = 0f,
     onTogglePlayPause: () -> Unit,
     onSeekTo: (Long) -> Unit,
     onRewind: (Int) -> Unit,
-    onSetSpeed: (Float) -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier,
-    onSaveToLibrary: (String) -> Unit = {},
-    isExporting: Boolean = false,
-    onExportMerged: (String, ExportAudioFormat) -> Unit = { _, _ -> },
-    onConvertFormat: () -> Unit = {},
-    mergedPreviewResult: com.example.mp3player.ffmpeg.ExportResult? = null
+    onRenameFile: (String) -> Unit,
+    onOverwrite: () -> Unit,
+    onSave: (String, Uri?) -> Unit,
+    onShare: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var showSaveNameDialog by remember { mutableStateOf(false) }
-    var saveFileName by remember { mutableStateOf("Clip_${System.currentTimeMillis() / 1000}") }
-    var showExportDialog by remember { mutableStateOf(false) }
-    var selectedFormat by remember { mutableStateOf(ExportAudioFormat.M4A) }
-    var exportFileName by remember { mutableStateOf("剪辑合并音频_${System.currentTimeMillis() / 1000}") }
+    val fileExt = previewFileName.substringAfterLast('.', "").ifEmpty { "m4a" }
+    val fileBaseName = previewFileName.substringBeforeLast('.', previewFileName)
+
+    val defaultSaveDir = remember {
+        context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)?.absolutePath
+            ?: context.filesDir.absolutePath
+    }
+
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var renameText by remember { mutableStateOf(fileBaseName) }
+    var showOverwriteConfirm by remember { mutableStateOf(false) }
+    var showSaveDialog by remember { mutableStateOf(false) }
+    var saveLocationUri by remember { mutableStateOf<Uri?>(null) }
+
+    // 预览文件名变化（如重命名后）同步刷新重命名输入框默认值
+    LaunchedEffect(previewFileName) {
+        renameText = previewFileName.substringBeforeLast('.', previewFileName)
+    }
+
+    // 系统文件选择器：让用户设置保存位置（SAF）
+    val saveFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("*/*")
+    ) { uri -> saveLocationUri = uri }
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = SecondaryTeal.copy(alpha = 0.08f)),
-        border = androidx.compose.foundation.BorderStroke(1.dp, SecondaryTeal.copy(alpha = 0.3f))
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.08f)),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.3f))
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(text = "剪辑预览 ($segmentCount 个片段)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = SecondaryTeal)
-                IconButton(onClick = onClose, modifier = Modifier.size(24.dp)) { Icon(Icons.Default.Close, null, modifier = Modifier.size(16.dp)) }
+                Text(
+                    text = title,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = color,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                IconButton(onClick = onClose, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Default.Close, null, modifier = Modifier.size(16.dp))
+                }
             }
+
+            // 预览文件名标签 + 铅笔重命名
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = color.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, color.copy(alpha = 0.3f))
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 10.dp, end = 2.dp, top = 2.dp, bottom = 2.dp)) {
+                        Text(
+                            text = previewFileName,
+                            fontSize = 12.sp,
+                            color = color,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        IconButton(
+                            onClick = {
+                                renameText = previewFileName.substringBeforeLast('.', previewFileName)
+                                showRenameDialog = true
+                            },
+                            modifier = Modifier.size(22.dp)
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = "重命名预览文件", tint = color, modifier = Modifier.size(13.dp))
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
 
             Slider(
                 value = currentPositionMs.toFloat(),
                 onValueChange = { onSeekTo(it.toLong()) },
-                valueRange = 0f..max(1f, durationMs.toFloat()),
+                valueRange = 0f..maxOf(1f, durationMs.toFloat()),
                 colors = SliderDefaults.colors(
-                    thumbColor = SecondaryTeal,
-                    activeTrackColor = SecondaryTeal,
+                    thumbColor = color,
+                    activeTrackColor = color,
                     inactiveTrackColor = Color(0xFFE5E7EB)
                 ),
                 modifier = Modifier.height(24.dp)
@@ -220,93 +271,158 @@ fun MergedPreviewPlayerCard(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(text = AudioItem.formatDuration(currentPositionMs), fontSize = 10.sp, color = SecondaryTeal)
-                Text(text = AudioItem.formatDuration(durationMs), fontSize = 10.sp, color = SecondaryTeal)
+                Text(text = AudioItem.formatDuration(currentPositionMs), fontSize = 10.sp, color = color)
+                Text(text = AudioItem.formatDuration(durationMs), fontSize = 10.sp, color = color)
             }
 
             Spacer(modifier = Modifier.height(4.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { onRewind(-5) }) { Icon(Icons.Default.Replay5, null) }
-                FilledIconButton(onClick = onTogglePlayPause, colors = IconButtonDefaults.filledIconButtonColors(containerColor = SecondaryTeal)) {
+                FilledIconButton(onClick = onTogglePlayPause, colors = IconButtonDefaults.filledIconButtonColors(containerColor = color)) {
                     Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null)
                 }
                 IconButton(onClick = { onRewind(5) }) { Icon(Icons.Default.Forward5, null) }
             }
 
-            Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 底部操作按钮：覆盖 / 保存 / 分享
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Button(
-                    onClick = { showSaveNameDialog = true },
-                    enabled = !isExporting,
+                    onClick = { showOverwriteConfirm = true },
+                    enabled = !isBusy,
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = SecondaryTeal),
+                    colors = ButtonDefaults.buttonColors(containerColor = color),
+                    shape = RoundedCornerShape(10.dp),
                     contentPadding = PaddingValues(horizontal = 4.dp)
                 ) {
-                    Text("覆盖原文件", fontSize = 11.sp, maxLines = 1)
+                    Icon(Icons.Default.Save, null, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("覆盖", fontSize = 12.sp, maxLines = 1)
                 }
+
                 OutlinedButton(
                     onClick = {
-                        exportFileName = "剪辑合并音频_${System.currentTimeMillis() / 1000}"
-                        showExportDialog = true
+                        saveLocationUri = null
+                        showSaveDialog = true
                     },
-                    enabled = !isExporting,
+                    enabled = !isBusy,
                     modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = color),
                     contentPadding = PaddingValues(horizontal = 4.dp)
                 ) {
-                    Text("另存为", fontSize = 11.sp, maxLines = 1)
+                    Icon(Icons.Default.FileCopy, null, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("保存", fontSize = 12.sp, maxLines = 1)
                 }
+
                 OutlinedButton(
-                    onClick = { mergedPreviewResult?.let { shareAudioFile(context, it.outputPath) } },
-                    enabled = !isExporting,
+                    onClick = onShare,
+                    enabled = !isBusy,
                     modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = color),
                     contentPadding = PaddingValues(horizontal = 4.dp)
                 ) {
-                    Text("分享", fontSize = 11.sp, maxLines = 1)
+                    Icon(Icons.Default.Share, null, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("分享", fontSize = 12.sp, maxLines = 1)
                 }
-                OutlinedButton(
-                    onClick = { onConvertFormat() },
-                    enabled = !isExporting,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 4.dp)
-                ) {
-                    Text("转换格式", fontSize = 11.sp, maxLines = 1)
-                }
+            }
+
+            if (isBusy) {
+                Spacer(modifier = Modifier.height(10.dp))
+                LinearProgressIndicator(
+                    progress = { progress.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                    color = color
+                )
             }
         }
     }
 
-    if (showSaveNameDialog) {
+    // 重命名预览文件对话框
+    if (showRenameDialog) {
         AlertDialog(
-            onDismissRequest = { showSaveNameDialog = false },
-            title = { Text("保存音频") },
-            text = { OutlinedTextField(value = saveFileName, onValueChange = { saveFileName = it }, label = { Text("文件名") }) },
-            confirmButton = { Button(onClick = { onSaveToLibrary(saveFileName.trim()); showSaveNameDialog = false }) { Text("保存") } },
-            dismissButton = { TextButton(onClick = { showSaveNameDialog = false }) { Text("取消") } }
+            onDismissRequest = { showRenameDialog = false },
+            title = { Text("重命名预览文件") },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    suffix = { Text(".$fileExt", fontSize = 13.sp, color = TextSecondary) },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onRenameFile(renameText.trim())
+                        showRenameDialog = false
+                    }
+                ) { Text("确定") }
+            },
+            dismissButton = { TextButton(onClick = { showRenameDialog = false }) { Text("取消") } }
         )
     }
 
-    if (showExportDialog) {
-        val defaultExportDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC)?.absolutePath
-            ?: context.filesDir.absolutePath
+    // 覆盖确认对话框
+    if (showOverwriteConfirm) {
         AlertDialog(
-            onDismissRequest = { showExportDialog = false },
-            title = { Text("另存为") },
+            onDismissRequest = { showOverwriteConfirm = false },
+            title = { Text("覆盖当前文件") },
+            text = { Text("确认用当前预览结果覆盖原文件？此操作不可撤销，并将清除该音频的文稿、剪辑片段与裁剪记录。", fontSize = 14.sp) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onOverwrite()
+                        showOverwriteConfirm = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = color)
+                ) { Text("确认覆盖") }
+            },
+            dismissButton = { TextButton(onClick = { showOverwriteConfirm = false }) { Text("取消") } }
+        )
+    }
+
+    // 保存对话框：仅设置保存位置，文件名沿用预览卡片上重命名后的名字
+    if (showSaveDialog) {
+        AlertDialog(
+            onDismissRequest = { showSaveDialog = false },
+            title = { Text("保存预览音频") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = exportFileName, onValueChange = { exportFileName = it }, label = { Text("文件名") }, singleLine = true)
-                    Text("选择格式:")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ExportAudioFormat.values().forEach { fmt ->
-                            FilterChip(selected = selectedFormat == fmt, onClick = { selectedFormat = fmt }, label = { Text(fmt.name) })
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("文件名: \n$previewFileName", fontSize = 13.sp, color = PrimaryDark)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("保存位置", fontSize = 13.sp, color = TextSecondary)
+                        Spacer(modifier = Modifier.weight(1f))
+                        TextButton(onClick = { saveFileLauncher.launch(previewFileName) }) {
+                            Text("选择位置", color = color)
                         }
                     }
-                    Text("保存至: $defaultExportDir", fontSize = 11.sp, color = TextSecondary)
+                    Text(
+                        text = saveLocationUri?.let { "已选择: $it" } ?: "默认保存至: $defaultSaveDir",
+                        fontSize = 11.sp,
+                        color = TextSecondary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             },
             confirmButton = {
-                Button(onClick = { onExportMerged(exportFileName.trim(), selectedFormat); showExportDialog = false }) { Text("开始导出") }
+                Button(
+                    onClick = {
+                        val uri = saveLocationUri
+                        saveLocationUri = null
+                        onSave(previewFileName.substringBeforeLast('.', previewFileName), uri)
+                        showSaveDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = color)
+                ) { Text("保存") }
             },
-            dismissButton = { TextButton(onClick = { showExportDialog = false }) { Text("取消") } }
+            dismissButton = { TextButton(onClick = { showSaveDialog = false }) { Text("取消") } }
         )
     }
 }
@@ -429,18 +545,4 @@ fun SegmentItemCard(
             }
         }
     }
-}
-
-private fun shareAudioFile(context: Context, filePath: String) {
-    try {
-        val file = File(filePath)
-        if (!file.exists()) return
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "audio/*"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        context.startActivity(Intent.createChooser(shareIntent, "分享剪辑音频"))
-    } catch (e: Exception) {}
 }

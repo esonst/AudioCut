@@ -36,7 +36,7 @@ class ViewModelFactory(
                 ConvertViewModel(application, container.eventBus, container.playerManager) as T
 
             modelClass.isAssignableFrom(SettingsViewModel::class.java) ->
-                SettingsViewModel(application, container.eventBus, container.prefs, container.asrManager, container.modelManager) as T
+                SettingsViewModel(application, container.eventBus, container.prefs, container.asrManager, container.modelManager, container.audioRepository) as T
 
             else -> throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
         }

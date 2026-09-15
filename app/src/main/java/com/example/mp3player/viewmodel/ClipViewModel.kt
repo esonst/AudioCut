@@ -1,6 +1,8 @@
 package com.example.mp3player.viewmodel
 
 import android.app.Application
+import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.os.Environment
 import androidx.lifecycle.viewModelScope
 import com.example.mp3player.core.AppEventBus
@@ -101,6 +103,19 @@ class ClipViewModel(
         viewModelScope.launch {
             eventBus.stopAllPreview.collect {
                 stopAllPreview()
+            }
+        }
+        // 音频被覆盖后（来自裁剪页等），若正是当前音频则清空片段与预览状态
+        viewModelScope.launch {
+            eventBus.audioOverwritten.collect { event ->
+                if (currentPlayingAudio.value?.id == event.audioId) {
+                    previewJob?.cancel()
+                    previewJob = null
+                    _previewingSegmentId.value = null
+                    mergedPreviewPlayer.pause()
+                    _segments.value = emptyList()
+                    _mergedPreviewResult.value = null
+                }
             }
         }
     }
@@ -320,6 +335,165 @@ class ClipViewModel(
     fun closeMergedPreview() {
         mergedPreviewPlayer.pause()
         _mergedPreviewResult.value = null
+    }
+
+    /** 重命名当前合并预览文件（缓存目录内），供预览卡片铅笔按钮调用 */
+    fun renamePreviewFile(newBaseName: String) {
+        val preview = _mergedPreviewResult.value ?: return
+        if (!preview.isSuccess) return
+        val oldFile = File(preview.outputPath)
+        if (!oldFile.exists()) return
+        var cleanName = newBaseName.trim().replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        if (cleanName.endsWith(".${oldFile.extension}", ignoreCase = true)) {
+            cleanName = cleanName.dropLast(oldFile.extension.length + 1)
+        }
+        if (cleanName.isBlank()) return
+        val newFile = File(oldFile.parentFile ?: return, "$cleanName.${oldFile.extension}")
+        if (newFile == oldFile) return
+        if (oldFile.renameTo(newFile)) {
+            _mergedPreviewResult.value = preview.copy(outputPath = newFile.absolutePath)
+            emitToast("预览文件已重命名为 ${newFile.name}")
+        } else {
+            emitToast("重命名失败")
+        }
+    }
+
+    /** 将合并预览保存到指定位置（SAF Uri）或默认音频目录，供预览卡片【保存】调用 */
+    fun savePreviewToLocation(customName: String, targetUri: Uri? = null) {
+        val preview = _mergedPreviewResult.value ?: return
+        if (!preview.isSuccess) return
+        val source = File(preview.outputPath)
+        if (!source.exists()) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (targetUri != null) {
+                    getApplication<Application>().contentResolver.openOutputStream(targetUri)?.use { out ->
+                        source.inputStream().use { it.copyTo(out) }
+                    }
+                    withContext(Dispatchers.Main) { emitToast("已保存至所选位置") }
+                } else {
+                    val dir = getApplication<Application>().getExternalFilesDir(Environment.DIRECTORY_MUSIC)
+                        ?: Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+                    val name = customName.ifBlank { "Clip_${System.currentTimeMillis()}" }
+                        .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                    val target = File(dir, "$name.${source.extension}")
+                    source.copyTo(target, overwrite = true)
+                    withContext(Dispatchers.Main) { emitToast("已保存至: ${target.absolutePath}") }
+                }
+                withContext(Dispatchers.Main) { eventBus.notifyAudioLibraryChanged() }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { emitToast("保存失败: ${e.message}") }
+            }
+        }
+    }
+
+    /** 分享合并预览文件，供预览卡片【分享】调用 */
+    fun shareMergedPreview() {
+        val preview = _mergedPreviewResult.value ?: run {
+            emitToast("当前没有可分享的预览")
+            return
+        }
+        if (!preview.isSuccess) return
+        val file = File(preview.outputPath)
+        if (!file.exists()) {
+            emitToast("预览文件不存在")
+            return
+        }
+        try {
+            val context = getApplication<Application>()
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context, "${context.packageName}.fileprovider", file
+            )
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "audio/*"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(
+                android.content.Intent.createChooser(intent, "分享剪辑音频").apply {
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            )
+        } catch (e: Exception) {
+            emitToast("分享失败: ${e.localizedMessage}")
+        }
+    }
+
+    /** 覆盖当前文件：以合并预览结果覆盖原文件，刷新元信息并清除该音频的文稿/片段/裁剪等关联数据 */
+    fun overwriteOriginalWithMerged() {
+        val audio = currentPlayingAudio.value ?: run {
+            emitToast("当前无音频")
+            return
+        }
+        val preview = _mergedPreviewResult.value
+        if (preview == null || !preview.isSuccess || !File(preview.outputPath).exists()) {
+            emitToast("请先生成合并预览")
+            return
+        }
+
+        viewModelScope.launch {
+            _isExporting.value = true
+            try {
+                withContext(Dispatchers.Main) {
+                    stopAllPreview()
+                    playerManager.pause()
+                }
+
+                // 文件级 IO（覆盖写入、读时长、读大小）放到 IO 线程，避免大文件阻塞主线程
+                val duration = withContext(Dispatchers.IO) {
+                    val sourceFile = File(audio.filePath)
+                    if (!sourceFile.exists() || !sourceFile.isFile) {
+                        null
+                    } else {
+                        val previewFile = File(preview.outputPath)
+                        previewFile.copyTo(sourceFile, overwrite = true)
+                        previewFile.delete()
+                        queryAudioDurationMs(sourceFile.absolutePath).coerceAtLeast(preview.durationMs)
+                    }
+                }
+                if (duration == null) {
+                    emitToast("原文件不可直接覆盖，请使用【保存】")
+                    return@launch
+                }
+
+                // 刷新当前音频元信息（时长/大小/修改时间）
+                val updated = audio.copy(
+                    durationMs = duration,
+                    sizeBytes = File(audio.filePath).length(),
+                    dateModifiedSec = System.currentTimeMillis() / 1000
+                )
+                playerManager.updateCurrentAudioMetadata(updated)
+
+                // 清除关联数据：文稿、剪辑片段、裁剪片段、转换格式记录、收藏等
+                prefs.deleteAudioData(audio.id)
+                _segments.value = emptyList()
+                _mergedPreviewResult.value = null
+
+                eventBus.notifyAudioOverwritten(audio.id, audio.filePath)
+                eventBus.notifyAudioLibraryChanged()
+                emitToast("已覆盖原文件：${audio.title}")
+            } catch (e: Exception) {
+                emitToast("覆盖失败: ${e.localizedMessage}")
+            } finally {
+                _isExporting.value = false
+            }
+        }
+    }
+
+    /** 读取本地音频文件时长（毫秒） */
+    private fun queryAudioDurationMs(path: String): Long {
+        return try {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(path)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            } finally {
+                runCatching { retriever.release() }
+            }
+        } catch (e: Exception) {
+            0L
+        }
     }
 
     /** 导出拼接音频 */
