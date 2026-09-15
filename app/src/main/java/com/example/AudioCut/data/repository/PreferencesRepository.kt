@@ -1,10 +1,10 @@
-package com.example.AudioCut.data.repository
+package com.example.audiocut.data.repository
 
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
 import androidx.core.content.edit
-import com.example.AudioCut.data.model.*
+import com.example.audiocut.data.model.*
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -16,7 +16,7 @@ import java.io.File
 class PreferencesRepository(context: Context) {
 
     private val prefs: SharedPreferences =
-        context.applicationContext.getSharedPreferences("mp3_player_prefs", Context.MODE_PRIVATE)
+        context.applicationContext.getSharedPreferences("audiocut_prefs", Context.MODE_PRIVATE)
 
     companion object {
         private const val KEY_FAVORITE_IDS = "key_favorite_ids"
@@ -385,7 +385,7 @@ class PreferencesRepository(context: Context) {
                 )
             }
 
-            val paragraphs = com.example.AudioCut.asr.OfflineAsrEngine.buildParagraphsFromSentences(sentences)
+            val paragraphs = com.example.audiocut.asr.OfflineAsrEngine.buildParagraphsFromSentences(sentences)
 
             TranscriptResult(
                 audioId = audioId,
@@ -458,7 +458,7 @@ class PreferencesRepository(context: Context) {
     }
 
     // 8. ASR与VAD超参数配置持久化
-    fun getAsrChunkSeconds(): Int = prefs.getInt(KEY_ASR_CHUNK_SECONDS, 30) // 默认切片间隔 30 秒
+    fun getAsrChunkSeconds(): Int = prefs.getInt(KEY_ASR_CHUNK_SECONDS, 60) // 默认切片间隔 30 秒
     fun saveAsrChunkSeconds(sec: Int) = prefs.edit { putInt(KEY_ASR_CHUNK_SECONDS, sec) }
 
     fun getEnableSlicing(): Boolean = prefs.getBoolean(KEY_ENABLE_SLICING, true)

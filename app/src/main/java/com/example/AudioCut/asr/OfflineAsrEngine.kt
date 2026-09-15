@@ -1,7 +1,7 @@
-package com.example.AudioCut.asr
+package com.example.audiocut.asr
 
 import android.content.Context
-import com.example.AudioCut.data.model.*
+import com.example.audiocut.data.model.*
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import com.k2fsa.sherpa.onnx.Vad
 import kotlinx.coroutines.Dispatchers

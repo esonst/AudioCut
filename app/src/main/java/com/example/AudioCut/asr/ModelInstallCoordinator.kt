@@ -1,4 +1,4 @@
-package com.example.AudioCut.asr
+package com.example.audiocut.asr
 
 import android.net.Uri
 import kotlinx.coroutines.CancellationException

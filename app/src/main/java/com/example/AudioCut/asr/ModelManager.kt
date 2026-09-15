@@ -1,4 +1,4 @@
-package com.example.AudioCut.asr
+package com.example.audiocut.asr
 
 import android.content.Context
 import android.net.Uri
@@ -61,7 +61,7 @@ class ModelManager(private val context: Context) {
             requiredFiles = listOf("model.int8.onnx", "tokens.txt")
         ),
         PUNCT_CT(
-            displayName = "标点恢复模型（punct-ct）",
+            displayName = "排版优化模型",
             dirName = "punct_ct",
             downloadUrl = "https://links.8uid.com/d/6876c6ae0886d371cdd27c8d9b051235",
             requiredFiles = listOf("model.int8.onnx", "tokens.json")
@@ -159,46 +159,81 @@ class ModelManager(private val context: Context) {
         onProgress: (Float) -> Unit,
         onExtract: (Float) -> Unit = {}
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        val archiveFile = File(context.cacheDir, "download_${type.name.lowercase()}.tar.bz2")
+        // 下载文件存放于 filesDir（持久目录），支持跨会话断点续传：停止 / 失败 / 重启 App 后保留已下载部分，下次下载自动从断点继续
+        val downloadDir = File(context.filesDir, "downloads").apply { mkdirs() }
+        val archiveFile = File(downloadDir, "model_${type.name.lowercase()}.tar.bz2")
+        // 下载完成标记：写入后表示压缩包已完整。解压阶段被中断时，下次检测到标记直接跳过下载进入解压，
+        // 避免对完整文件发 Range 请求被服务器返回 416 而误报"下载失败"
+        val doneMarker = File(downloadDir, "model_${type.name.lowercase()}.tar.bz2.done")
         try {
-            if (archiveFile.exists()) archiveFile.delete()
+            // 上次下载已完成（标记存在）但解压被中断：跳过下载直接解压
+            val archiveComplete = doneMarker.exists() && archiveFile.exists() && archiveFile.length() > 0L
+            if (!archiveComplete) {
+                // 已有部分文件不删除：由 Range 断点续传逻辑决定续传或从头下载
+                var existing = if (archiveFile.exists()) archiveFile.length() else 0L
 
-            // 1. 下载
-            val connection = (URL(type.downloadUrl).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 20_000
-                readTimeout = 30_000
-                instanceFollowRedirects = true
-                setRequestProperty("User-Agent", "AudioCut-ModelInstaller/1.0")
-                useCaches = false
-            }
-            try {
-                val code = connection.responseCode
-                if (code !in 200..399) {
-                    error("下载失败（HTTP $code）")
-                }
-                val total = connection.contentLengthLong
-                FileOutputStream(archiveFile).use { output ->
-                    val input = BufferedInputStream(connection.inputStream)
-                    val buffer = ByteArray(64 * 1024)
-                    var downloaded = 0L
-                    var read: Int
-                    while (input.read(buffer).also { read = it } != -1) {
-                        currentCoroutineContext().ensureActive()
-                        output.write(buffer, 0, read)
-                        downloaded += read
-                        if (total > 0) {
-                            onProgress((downloaded.toFloat() / total).coerceIn(0f, 1f))
-                        } else {
-                            onProgress(-1f)
-                        }
+                // 1. 下载（已有部分文件时发送 Range 请求，服务器返回 206 则从断点续传）
+                val connection = (URL(type.downloadUrl).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 20_000
+                    readTimeout = 30_000
+                    instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", "AudioCut-ModelInstaller/1.0")
+                    useCaches = false
+                    if (existing > 0L) {
+                        setRequestProperty("Range", "bytes=$existing-")
                     }
                 }
-            } finally {
-                connection.disconnect()
-            }
+                try {
+                    val code = connection.responseCode
+                    when {
+                        code == 206 -> Unit // 服务器接受断点续传，existing 保持不变
+                        code in 200..299 -> {
+                            // 服务器不支持 Range：从头下载
+                            existing = 0L
+                            archiveFile.delete()
+                        }
+                        code == 416 -> {
+                            // Range 超出文件末尾：本地压缩包已完整（上次下载完成但标记未写入或解压被中断），
+                            // 直接视为完整进入解压，避免误报"下载失败（HTTP 416）"
+                            if (!archiveFile.exists() || archiveFile.length() == 0L) {
+                                existing = 0L
+                                archiveFile.delete()
+                            }
+                        }
+                        else -> error("下载失败（HTTP $code）")
+                    }
+                    val totalRemaining = connection.contentLengthLong
+                    val total = if (code == 206) existing + maxOf(0L, totalRemaining) else maxOf(0L, totalRemaining)
+                    // 已有文件异常大于总长度（服务端内容已变化）：重置从头下载
+                    if (existing > 0L && total > 0L && existing >= total) {
+                        existing = 0L
+                        archiveFile.delete()
+                    }
+                    FileOutputStream(archiveFile, existing > 0L).use { output ->
+                        val input = BufferedInputStream(connection.inputStream)
+                        val buffer = ByteArray(64 * 1024)
+                        var downloaded = existing
+                        var read: Int
+                        while (input.read(buffer).also { read = it } != -1) {
+                            currentCoroutineContext().ensureActive()
+                            output.write(buffer, 0, read)
+                            downloaded += read
+                            if (total > 0) {
+                                onProgress((downloaded.toFloat() / total).coerceIn(0f, 1f))
+                            } else {
+                                onProgress(-1f)
+                            }
+                        }
+                    }
+                } finally {
+                    connection.disconnect()
+                }
 
-            if (!archiveFile.exists() || archiveFile.length() == 0L) {
-                error("下载内容为空")
+                if (!archiveFile.exists() || archiveFile.length() == 0L) {
+                    error("下载内容为空")
+                }
+                // 下载完成，写入标记：解压阶段被中断时下次可直接解压，无需重新下载
+                runCatching { doneMarker.writeText("ok") }
             }
 
             // 2. 解压安装（带解压进度）
@@ -206,10 +241,10 @@ class ModelManager(private val context: Context) {
                 error(it.message ?: "模型解压安装失败")
             }
             archiveFile.delete()
+            doneMarker.delete()
             Result.success(Unit)
         } catch (e: CancellationException) {
-            // 用户点击停止：清理未完成的临时文件后向调用方传播取消
-            archiveFile.delete()
+            // 用户点击停止：保留已下载部分与完成标记到 filesDir，下次下载自动续传或直接解压
             throw e
         } catch (e: Exception) {
             Result.failure(e)

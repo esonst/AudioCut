@@ -1,4 +1,4 @@
-package com.example.AudioCut.ui.components
+package com.example.audiocut.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
@@ -26,9 +26,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.AudioCut.ui.theme.PrimaryLight
-import com.example.AudioCut.ui.theme.TextMuted
-import com.example.AudioCut.navigation.AppScreen
+import com.example.audiocut.ui.theme.PrimaryLight
+import com.example.audiocut.ui.theme.TextMuted
+import com.example.audiocut.navigation.AppScreen
 
 /**
  * 底部导航栏：音频库、文稿、剪辑、裁剪、格式转换 五大页面

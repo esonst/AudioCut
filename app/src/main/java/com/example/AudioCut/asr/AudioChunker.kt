@@ -1,11 +1,11 @@
-package com.example.AudioCut.asr
+package com.example.audiocut.asr
 
 import android.content.Context
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
-import com.example.AudioCut.data.model.AudioItem
+import com.example.audiocut.data.model.AudioItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File

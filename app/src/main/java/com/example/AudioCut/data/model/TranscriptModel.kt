@@ -1,4 +1,4 @@
-package com.example.AudioCut.data.model
+package com.example.audiocut.data.model
 
 /**
  * 语音识别字级时间戳单元

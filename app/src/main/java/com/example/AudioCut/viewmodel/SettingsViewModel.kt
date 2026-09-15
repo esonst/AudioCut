@@ -1,14 +1,14 @@
-package com.example.AudioCut.viewmodel
+package com.example.audiocut.viewmodel
 
 import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.viewModelScope
-import com.example.AudioCut.asr.AsrManager
-import com.example.AudioCut.asr.ModelInstallCoordinator
-import com.example.AudioCut.asr.ModelManager
-import com.example.AudioCut.core.AppEventBus
-import com.example.AudioCut.data.repository.AudioRepository
-import com.example.AudioCut.data.repository.PreferencesRepository
+import com.example.audiocut.asr.AsrManager
+import com.example.audiocut.asr.ModelInstallCoordinator
+import com.example.audiocut.asr.ModelManager
+import com.example.audiocut.core.AppEventBus
+import com.example.audiocut.data.repository.AudioRepository
+import com.example.audiocut.data.repository.PreferencesRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow

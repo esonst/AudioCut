@@ -1,6 +1,6 @@
-package com.example.AudioCut.data.repository
+package com.example.audiocut.data.repository
 
-import com.example.AudioCut.data.model.*
+import com.example.audiocut.data.model.*
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

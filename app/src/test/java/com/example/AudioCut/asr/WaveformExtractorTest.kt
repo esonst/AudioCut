@@ -1,4 +1,4 @@
-package com.example.AudioCut.asr
+package com.example.audiocut.asr
 import org.junit.Test
 import java.util.*
 

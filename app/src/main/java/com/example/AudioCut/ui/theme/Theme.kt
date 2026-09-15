@@ -1,4 +1,4 @@
-package com.example.AudioCut.ui.theme
+package com.example.audiocut.ui.theme
 
 import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme

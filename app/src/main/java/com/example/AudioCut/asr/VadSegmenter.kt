@@ -1,4 +1,4 @@
-package com.example.AudioCut.asr
+package com.example.audiocut.asr
 
 import com.k2fsa.sherpa.onnx.SileroVadModelConfig
 import com.k2fsa.sherpa.onnx.Vad

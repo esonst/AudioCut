@@ -1,9 +1,9 @@
-package com.example.AudioCut.viewmodel
+package com.example.audiocut.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import com.example.AudioCut.di.AppContainer
+import com.example.audiocut.di.AppContainer
 
 /**
  * 通用 ViewModelFactory

@@ -1,4 +1,4 @@
-package com.example.AudioCut.ui.components
+package com.example.audiocut.ui.components
 
 import android.net.Uri
 import android.os.Environment
@@ -27,10 +27,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.AudioCut.data.model.AudioItem
-import com.example.AudioCut.data.model.AudioSegment
-import com.example.AudioCut.ffmpeg.ExportResult
-import com.example.AudioCut.ui.theme.*
+import com.example.audiocut.data.model.AudioItem
+import com.example.audiocut.data.model.AudioSegment
+import com.example.audiocut.ffmpeg.ExportResult
+import com.example.audiocut.ui.theme.*
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive

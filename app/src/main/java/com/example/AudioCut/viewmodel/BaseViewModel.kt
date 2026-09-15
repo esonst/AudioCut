@@ -1,9 +1,10 @@
-package com.example.AudioCut.viewmodel
+package com.example.audiocut.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.AudioCut.core.AppEventBus
+import kotlinx.coroutines.CancellationException
+import com.example.audiocut.core.AppEventBus
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -29,6 +30,8 @@ abstract class BaseViewModel(
     ) = viewModelScope.launch {
         try {
             block()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emitToast("操作失败: ${e.localizedMessage}")
         }

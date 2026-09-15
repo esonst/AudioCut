@@ -1,4 +1,4 @@
-package com.example.AudioCut.ui.screens
+package com.example.audiocut.ui.screens
 
 
 import androidx.compose.foundation.background
@@ -18,21 +18,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.LayoutCoordinates
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.AudioCut.data.model.AudioItem
-import com.example.AudioCut.navigation.AppScreen
-import com.example.AudioCut.ui.components.FloatingPlayerBar
-import com.example.AudioCut.ui.components.ModelInstallDialogHost
-import com.example.AudioCut.ui.components.OptimizedTranscriptView
-import com.example.AudioCut.ui.theme.*
-import com.example.AudioCut.viewmodel.ClipViewModel
-import com.example.AudioCut.viewmodel.MainViewModel
-import com.example.AudioCut.viewmodel.TranscriptViewModel
+import com.example.audiocut.data.model.AudioItem
+import com.example.audiocut.navigation.AppScreen
+import com.example.audiocut.ui.components.FloatingPlayerBar
+import com.example.audiocut.ui.components.ModelInstallDialogHost
+import com.example.audiocut.ui.components.OptimizedTranscriptView
+import com.example.audiocut.ui.theme.*
+import com.example.audiocut.viewmodel.ClipViewModel
+import com.example.audiocut.viewmodel.MainViewModel
+import com.example.audiocut.viewmodel.TranscriptViewModel
 
 /**
  * 文稿与音频剪辑页面
@@ -374,8 +372,6 @@ fun TranscriptHeaderView(
     fullText: String,
     showLayoutOptimization: Boolean = true
 ) {
-    var showCopyDialog by remember { mutableStateOf(false) }
-
     Surface(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
         color = Color.White
@@ -424,21 +420,4 @@ fun TranscriptHeaderView(
         }
     }
 
-    if (showCopyDialog) {
-        val clipboardManager = LocalClipboardManager.current
-        AlertDialog(
-            onDismissRequest = { showCopyDialog = false },
-            title = { Text("复制文稿") },
-            text = { Text("确认复制识别到的全文内容到剪贴板？", fontSize = 14.sp) },
-            confirmButton = {
-                Button(onClick = {
-                    clipboardManager.setText(AnnotatedString(fullText))
-                    showCopyDialog = false
-                }) { Text("复制全文") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCopyDialog = false }) { Text("关闭") }
-            }
-        )
-    }
 }

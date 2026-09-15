@@ -1,4 +1,4 @@
-package com.example.AudioCut.ui.screens
+package com.example.audiocut.ui.screens
 
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
@@ -26,13 +26,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.AudioCut.data.model.AudioItem
-import com.example.AudioCut.data.model.AudioSegment
-import com.example.AudioCut.navigation.AppScreen
-import com.example.AudioCut.ui.components.AudioPreviewCard
-import com.example.AudioCut.ui.theme.*
-import com.example.AudioCut.viewmodel.MainViewModel
-import com.example.AudioCut.viewmodel.TrimViewModel
+import com.example.audiocut.data.model.AudioItem
+import com.example.audiocut.data.model.AudioSegment
+import com.example.audiocut.navigation.AppScreen
+import com.example.audiocut.ui.components.AudioPreviewCard
+import com.example.audiocut.ui.theme.*
+import com.example.audiocut.viewmodel.MainViewModel
+import com.example.audiocut.viewmodel.TrimViewModel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -282,7 +282,7 @@ private fun TrimEditorHeaderCard(
     selectedTrims: List<AudioSegment>,
     totalDurationMs: Long,
     isGeneratingPreview: Boolean,
-    trimPreviewResult: com.example.AudioCut.ffmpeg.ExportResult?,
+    trimPreviewResult: com.example.audiocut.ffmpeg.ExportResult?,
     isPreviewPlaying: Boolean,
     previewPositionMs: Long,
     previewDurationMs: Long,

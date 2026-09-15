@@ -1,4 +1,4 @@
-package com.example.AudioCut
+package com.example.audiocut
 
 import android.Manifest
 import android.content.Intent
@@ -19,9 +19,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
-import com.example.AudioCut.ui.screens.MainScreen
-import com.example.AudioCut.ui.theme.AudioCutTheme
-import com.example.AudioCut.viewmodel.*
+import com.example.audiocut.ui.screens.MainScreen
+import com.example.audiocut.ui.theme.AudioCutTheme
+import com.example.audiocut.viewmodel.*
 
 class MainActivity : ComponentActivity() {
 

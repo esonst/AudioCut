@@ -1,4 +1,4 @@
-package com.example.AudioCut.ui.components
+package com.example.audiocut.ui.components
 
 import android.view.MotionEvent
 import android.view.View
@@ -31,10 +31,10 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
-import com.example.AudioCut.data.model.TranscriptResult
-import com.example.AudioCut.data.model.formatTranscriptTimestamp
-import com.example.AudioCut.data.model.transcriptTimestampLineLength
-import com.example.AudioCut.ui.theme.*
+import com.example.audiocut.data.model.TranscriptResult
+import com.example.audiocut.data.model.formatTranscriptTimestamp
+import com.example.audiocut.data.model.transcriptTimestampLineLength
+import com.example.audiocut.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop

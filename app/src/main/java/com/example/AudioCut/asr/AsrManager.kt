@@ -1,8 +1,8 @@
-package com.example.AudioCut.asr
+package com.example.audiocut.asr
 
 import android.content.Context
-import com.example.AudioCut.data.model.AudioItem
-import com.example.AudioCut.data.model.TranscriptResult
+import com.example.audiocut.data.model.AudioItem
+import com.example.audiocut.data.model.TranscriptResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -51,7 +51,7 @@ class AsrManager(
     suspend fun transcribeAudio(
         audio: AudioItem,
         startOffsetMs: Long = 0L,
-        existingWords: List<com.example.AudioCut.data.model.TranscriptWord> = emptyList(),
+        existingWords: List<com.example.audiocut.data.model.TranscriptWord> = emptyList(),
         config: AsrConfig = AsrConfig(),
         onPartialResult: (TranscriptResult) -> Unit,
         onProgress: (Float) -> Unit,
@@ -76,12 +76,16 @@ class AsrManager(
     /**
      * 释放 ASR 引擎占用的重度内存资源（模型与 VAD）
      * 通常在设置界面"清理资源"或应用退出时调用
+     *
+     * @return true 已释放；false 当前正在识别，为避免释放正在使用的模型导致崩溃，拒绝释放
      */
-    fun release() {
+    fun release(): Boolean {
         synchronized(this) {
+            if (_isRecognizing.value) return false
             OfflineAsrEngine.releaseResources()
             engine = null
             _isEngineReady.value = false
         }
+        return true
     }
 }

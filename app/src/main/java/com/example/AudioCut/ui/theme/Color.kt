@@ -1,4 +1,4 @@
-package com.example.AudioCut.ui.theme
+package com.example.audiocut.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

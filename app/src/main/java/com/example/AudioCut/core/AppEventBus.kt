@@ -1,6 +1,6 @@
-package com.example.AudioCut.core
+package com.example.audiocut.core
 
-import com.example.AudioCut.data.model.AudioSegment
+import com.example.audiocut.data.model.AudioSegment
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow

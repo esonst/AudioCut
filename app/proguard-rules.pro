@@ -8,7 +8,7 @@
 }
 
 # Data Models
--keep class com.example.AudioCut.data.model.** { *; }
+-keep class com.example.audiocut.data.model.** { *; }
 
 
 # Commons-Compress（模型 tar.bz2 解压）

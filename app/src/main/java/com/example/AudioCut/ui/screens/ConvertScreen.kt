@@ -1,4 +1,4 @@
-package com.example.AudioCut.ui.screens
+package com.example.audiocut.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -20,12 +20,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.AudioCut.data.model.AudioItem
-import com.example.AudioCut.data.model.ConvertQuality
-import com.example.AudioCut.ui.components.ConversionProgressView
-import com.example.AudioCut.ui.theme.*
-import com.example.AudioCut.viewmodel.MainViewModel
-import com.example.AudioCut.viewmodel.ConvertViewModel
+import com.example.audiocut.data.model.AudioItem
+import com.example.audiocut.data.model.ConvertQuality
+import com.example.audiocut.ui.components.ConversionProgressView
+import com.example.audiocut.ui.theme.*
+import com.example.audiocut.viewmodel.MainViewModel
+import com.example.audiocut.viewmodel.ConvertViewModel
 
 /**
  * 格式转换界面
@@ -547,7 +547,7 @@ fun ConvertScreen(mainViewModel: MainViewModel, convertViewModel: ConvertViewMod
                     TextButton(
                         onClick = {
                             // 返回音频库选择
-                            mainViewModel.navigateTo(com.example.AudioCut.navigation.AppScreen.AUDIO_LIBRARY)
+                            mainViewModel.navigateTo(com.example.audiocut.navigation.AppScreen.AUDIO_LIBRARY)
                             showInputFileSelection = false
                         }
                     ) {

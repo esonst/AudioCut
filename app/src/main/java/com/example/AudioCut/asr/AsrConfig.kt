@@ -1,4 +1,4 @@
-package com.example.AudioCut.asr
+package com.example.audiocut.asr
 
 /**
  * 离线文稿转写流水线配置（分块 / VAD / 识别 / 标点分段）

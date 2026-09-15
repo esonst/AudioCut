@@ -1,4 +1,4 @@
-package com.example.AudioCut.navigation
+package com.example.audiocut.navigation
 
 /**
  * 应用导航页面定义（支持音乐库-文稿-剪辑-裁剪-格式转换-设置 六屏左右滑动切换）

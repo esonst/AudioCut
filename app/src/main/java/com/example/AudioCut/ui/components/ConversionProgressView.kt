@@ -1,4 +1,4 @@
-package com.example.AudioCut.ui.components
+package com.example.audiocut.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,8 +14,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.AudioCut.data.model.ConvertState
-import com.example.AudioCut.ui.theme.*
+import com.example.audiocut.data.model.ConvertState
+import com.example.audiocut.ui.theme.*
 import java.util.Locale
 
 /**

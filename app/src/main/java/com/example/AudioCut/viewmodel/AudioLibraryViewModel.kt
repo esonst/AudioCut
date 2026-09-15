@@ -1,14 +1,14 @@
-package com.example.AudioCut.viewmodel
+package com.example.audiocut.viewmodel
 
 import android.app.Application
 import android.net.Uri
 import android.os.Environment
 import androidx.lifecycle.viewModelScope
-import com.example.AudioCut.core.AppEventBus
-import com.example.AudioCut.data.model.*
-import com.example.AudioCut.data.repository.AudioRepository
-import com.example.AudioCut.data.repository.PreferencesRepository
-import com.example.AudioCut.player.AudioPlayerManager
+import com.example.audiocut.core.AppEventBus
+import com.example.audiocut.data.model.*
+import com.example.audiocut.data.repository.AudioRepository
+import com.example.audiocut.data.repository.PreferencesRepository
+import com.example.audiocut.player.AudioPlayerManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted

@@ -1,6 +1,6 @@
-package com.example.AudioCut.asr
+package com.example.audiocut.asr
 
-import com.example.AudioCut.data.model.TranscriptWord
+import com.example.audiocut.data.model.TranscriptWord
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.OfflineModelConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
@@ -110,20 +110,21 @@ class SenseVoiceRecognizer {
 
                     if (tok.isBlank() || isSpecialTag(tok)) continue
 
-                    var start = (segmentBaseTimeMs + (timestamps[i] * 1000L).toLong())
+                    val start = (segmentBaseTimeMs + (timestamps[i] * 1000L).toLong())
                         .coerceIn(0L, totalDurationMs)
                     val dur = if (durations.getOrNull(i) ?: 0f > 0.01f) durations[i] else 0.2f
-                    val end = (start + (dur * 1000L).toLong())
-                        .coerceIn(start + 50L, totalDurationMs)
+                    val end = minOf(start + (dur * 1000L).toLong(), maxOf(totalDurationMs, start + 50L))
+
 
                     // 过滤超出当前切片范围的内容
                     if (sliceStartMs > 0) {
                         if (end <= sliceStartMs) {
                             continue
                         }
-                        // 词语跨 sliceStart 边界，把 start 裁剪到 sliceStartMs，消除冗余区时间
+                        // 词跨 sliceStart 左边界时丢弃：该词在上一块已按 sliceEnd 边界保留，
+                        // 若在此裁剪保留会造成同一词在相邻两块重复出现
                         if (start < sliceStartMs) {
-                            start = sliceStartMs
+                            continue
                         }
                     }
                     if (sliceEndMs < totalDurationMs && start >= sliceEndMs) {

@@ -1,4 +1,4 @@
-package com.example.AudioCut.data.model
+package com.example.audiocut.data.model
 
 /**
  * 转换状态数据类

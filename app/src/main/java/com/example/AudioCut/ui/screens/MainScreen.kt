@@ -1,4 +1,4 @@
-package com.example.AudioCut.ui.screens
+package com.example.audiocut.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.Box
@@ -14,16 +14,16 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.AudioCut.navigation.AppScreen
-import com.example.AudioCut.ui.components.BottomNavBar
-import com.example.AudioCut.ui.components.FloatingPlayerBar
-import com.example.AudioCut.viewmodel.AudioLibraryViewModel
-import com.example.AudioCut.viewmodel.ClipViewModel
-import com.example.AudioCut.viewmodel.ConvertViewModel
-import com.example.AudioCut.viewmodel.MainViewModel
-import com.example.AudioCut.viewmodel.SettingsViewModel
-import com.example.AudioCut.viewmodel.TranscriptViewModel
-import com.example.AudioCut.viewmodel.TrimViewModel
+import com.example.audiocut.navigation.AppScreen
+import com.example.audiocut.ui.components.BottomNavBar
+import com.example.audiocut.ui.components.FloatingPlayerBar
+import com.example.audiocut.viewmodel.AudioLibraryViewModel
+import com.example.audiocut.viewmodel.ClipViewModel
+import com.example.audiocut.viewmodel.ConvertViewModel
+import com.example.audiocut.viewmodel.MainViewModel
+import com.example.audiocut.viewmodel.SettingsViewModel
+import com.example.audiocut.viewmodel.TranscriptViewModel
+import com.example.audiocut.viewmodel.TrimViewModel
 import kotlinx.coroutines.flow.collectLatest
 
 /**

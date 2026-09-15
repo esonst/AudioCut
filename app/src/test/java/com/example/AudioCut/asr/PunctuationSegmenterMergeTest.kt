@@ -1,6 +1,6 @@
-package com.example.AudioCut.asr
+package com.example.audiocut.asr
 
-import com.example.AudioCut.data.model.TranscriptWord
+import com.example.audiocut.data.model.TranscriptWord
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

@@ -1,4 +1,4 @@
-package com.example.AudioCut.data.model
+package com.example.audiocut.data.model
 
 /**
  * 标记音频片段模型（支持微调、重命名与拼接导出）

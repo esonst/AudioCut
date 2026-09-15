@@ -1,4 +1,4 @@
-package com.example.AudioCut.ui.components
+package com.example.audiocut.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -11,7 +11,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.example.AudioCut.ui.theme.PrimaryLight
+import com.example.audiocut.ui.theme.PrimaryLight
 
 /**
  * 为 LazyColumn 绘制简单的垂直滚动条

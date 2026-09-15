@@ -1,17 +1,17 @@
-package com.example.AudioCut.viewmodel
+package com.example.audiocut.viewmodel
 
 import android.app.Application
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Environment
 import androidx.lifecycle.viewModelScope
-import com.example.AudioCut.core.AppEventBus
-import com.example.AudioCut.data.model.*
-import com.example.AudioCut.data.repository.PreferencesRepository
-import com.example.AudioCut.ffmpeg.AudioCutterConcatenator
-import com.example.AudioCut.ffmpeg.ExportAudioFormat
-import com.example.AudioCut.ffmpeg.ExportResult
-import com.example.AudioCut.player.AudioPlayerManager
+import com.example.audiocut.core.AppEventBus
+import com.example.audiocut.data.model.*
+import com.example.audiocut.data.repository.PreferencesRepository
+import com.example.audiocut.ffmpeg.AudioCutterConcatenator
+import com.example.audiocut.ffmpeg.ExportAudioFormat
+import com.example.audiocut.ffmpeg.ExportResult
+import com.example.audiocut.player.AudioPlayerManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow

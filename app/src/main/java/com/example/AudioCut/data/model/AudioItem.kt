@@ -1,4 +1,4 @@
-package com.example.AudioCut.data.model
+package com.example.audiocut.data.model
 
 import android.net.Uri
 

@@ -1,4 +1,4 @@
-package com.example.AudioCut.ui.screens
+package com.example.audiocut.ui.screens
 
 import android.Manifest
 import android.content.Context
@@ -30,17 +30,17 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
-import com.example.AudioCut.data.model.AudioItem
-import com.example.AudioCut.data.model.BrowseMode
-import com.example.AudioCut.navigation.AppScreen
-import com.example.AudioCut.ui.components.FilterSortBottomSheet
-import com.example.AudioCut.ui.components.FloatingPlayerBar
-import com.example.AudioCut.ui.components.ScanImportDialog
-import com.example.AudioCut.ui.components.drawVerticalScrollbar
-import com.example.AudioCut.ui.theme.*
-import com.example.AudioCut.utils.RingtoneHelper
-import com.example.AudioCut.viewmodel.AudioLibraryViewModel
-import com.example.AudioCut.viewmodel.MainViewModel
+import com.example.audiocut.data.model.AudioItem
+import com.example.audiocut.data.model.BrowseMode
+import com.example.audiocut.navigation.AppScreen
+import com.example.audiocut.ui.components.FilterSortBottomSheet
+import com.example.audiocut.ui.components.FloatingPlayerBar
+import com.example.audiocut.ui.components.ScanImportDialog
+import com.example.audiocut.ui.components.drawVerticalScrollbar
+import com.example.audiocut.ui.theme.*
+import com.example.audiocut.utils.RingtoneHelper
+import com.example.audiocut.viewmodel.AudioLibraryViewModel
+import com.example.audiocut.viewmodel.MainViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import kotlinx.coroutines.delay

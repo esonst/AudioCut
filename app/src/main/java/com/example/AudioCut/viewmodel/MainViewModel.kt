@@ -1,14 +1,14 @@
-package com.example.AudioCut.viewmodel
+package com.example.audiocut.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.viewModelScope
-import com.example.AudioCut.core.AppEventBus
-import com.example.AudioCut.data.model.AudioItem
-import com.example.AudioCut.data.repository.AudioRepository
-import com.example.AudioCut.data.repository.PreferencesRepository
-import com.example.AudioCut.navigation.AppScreen
-import com.example.AudioCut.navigation.PlayerTab
-import com.example.AudioCut.player.AudioPlayerManager
+import com.example.audiocut.core.AppEventBus
+import com.example.audiocut.data.model.AudioItem
+import com.example.audiocut.data.repository.AudioRepository
+import com.example.audiocut.data.repository.PreferencesRepository
+import com.example.audiocut.navigation.AppScreen
+import com.example.audiocut.navigation.PlayerTab
+import com.example.audiocut.player.AudioPlayerManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,7 +54,7 @@ class MainViewModel(
     val currentPositionMs: StateFlow<Long> = playerManager.currentPositionMs
     val durationMs: StateFlow<Long> = playerManager.durationMs
     val playbackSpeed: StateFlow<Float> = playerManager.playbackSpeed
-    val loopMode: StateFlow<com.example.AudioCut.data.model.LoopMode> = playerManager.loopMode
+    val loopMode: StateFlow<com.example.audiocut.data.model.LoopMode> = playerManager.loopMode
     val isBuffering: StateFlow<Boolean> = playerManager.isBuffering
 
     init {

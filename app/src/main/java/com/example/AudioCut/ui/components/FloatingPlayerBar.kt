@@ -1,4 +1,4 @@
-package com.example.AudioCut.ui.components
+package com.example.audiocut.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -30,8 +30,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.AudioCut.data.model.AudioItem
-import com.example.AudioCut.ui.theme.*
+import com.example.audiocut.data.model.AudioItem
+import com.example.audiocut.ui.theme.*
 
 /**
  * 浮动播放控制栏（置于音频库、文稿等界面底部，支持快速控制完整音频播放、上一曲、下一曲、快退5s、快进5s）

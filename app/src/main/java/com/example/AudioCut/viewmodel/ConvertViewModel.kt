@@ -1,4 +1,4 @@
-package com.example.AudioCut.viewmodel
+package com.example.audiocut.viewmodel
 
 import android.app.Application
 import android.content.Context
@@ -8,10 +8,10 @@ import android.os.Environment
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewModelScope
 import com.arthenica.ffmpegkit.*
-import com.example.AudioCut.core.AppEventBus
-import com.example.AudioCut.data.model.ConvertQuality
-import com.example.AudioCut.data.model.ConvertState
-import com.example.AudioCut.player.AudioPlayerManager
+import com.example.audiocut.core.AppEventBus
+import com.example.audiocut.data.model.ConvertQuality
+import com.example.audiocut.data.model.ConvertState
+import com.example.audiocut.player.AudioPlayerManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -35,7 +35,7 @@ class ConvertViewModel(
     private val playerManager: AudioPlayerManager
 ) : BaseViewModel(application, eventBus) {
 
-    val currentPlayingAudio: StateFlow<com.example.AudioCut.data.model.AudioItem?> = playerManager.currentAudio
+    val currentPlayingAudio: StateFlow<com.example.audiocut.data.model.AudioItem?> = playerManager.currentAudio
 
     private val _convertInputFile = MutableStateFlow<String?>(null)
     val convertInputFile: StateFlow<String?> = _convertInputFile.asStateFlow()
@@ -186,10 +186,10 @@ class ConvertViewModel(
             // 统计回调：精准进度
             val statisticsCallback = StatisticsCallback { stats ->
                 val totalMs = convertTotalDurationMs
-                val processedMs = stats?.time ?: 0.0
-                if (totalMs <= 0L || processedMs <= 0.0) return@StatisticsCallback
+                val processedSec = stats?.time ?: 0.0
+                if (totalMs <= 0L || processedSec <= 0.0) return@StatisticsCallback
 
-                val progress = (processedMs / totalMs).toFloat().coerceIn(0f, 0.99f)
+                val progress = ((processedSec * 1000.0) / totalMs).toFloat().coerceIn(0f, 0.99f)
                 val elapsed = System.currentTimeMillis() - convertStartTime
                 val remaining = if (progress > 0.01f) ((elapsed / progress) * (1f - progress)).toLong() else 0L
 

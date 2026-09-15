@@ -1,4 +1,4 @@
-package com.example.AudioCut.ui.components
+package com.example.audiocut.ui.components
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -20,13 +20,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.AudioCut.asr.ModelInstallCoordinator
-import com.example.AudioCut.asr.ModelManager
-import com.example.AudioCut.ui.theme.PrimaryDark
-import com.example.AudioCut.ui.theme.PrimaryLight
-import com.example.AudioCut.ui.theme.SurfaceVariantLight
-import com.example.AudioCut.ui.theme.TextMuted
-import com.example.AudioCut.ui.theme.TextSecondary
+import android.widget.Toast
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import com.example.audiocut.asr.ModelInstallCoordinator
+import com.example.audiocut.asr.ModelManager
+import com.example.audiocut.ui.theme.PrimaryDark
+import com.example.audiocut.ui.theme.PrimaryLight
+import com.example.audiocut.ui.theme.SurfaceVariantLight
+import com.example.audiocut.ui.theme.TextMuted
+import com.example.audiocut.ui.theme.TextSecondary
 
 /** 选择模型压缩包（.tar.bz2）的 MIME 类型 */
 private val MODEL_ARCHIVE_MIME_TYPES = arrayOf(
@@ -94,7 +99,8 @@ fun ModelInstallDialogHost(
                 type = state.type,
                 downloadUrl = state.downloadUrl,
                 onImport = { launcher.launch(MODEL_ARCHIVE_MIME_TYPES) },
-                onDismiss = onDismiss
+                onDismiss = onDismiss,
+                onRetry = onDownload
             )
         }
     }
@@ -202,22 +208,25 @@ fun ModelProgressDialog(
 }
 
 /**
- * 下载失败卡片：展示官方下载地址，引导用户手动下载后导入
+ * 下载失败卡片：支持一键重试（自动断点续传）；展示官方下载地址（点击可复制），引导手动下载后导入
  */
 @Composable
 fun ModelFailedCard(
     type: ModelManager.ModelType?,
     downloadUrl: String,
     onImport: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit
 ) {
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("${type?.displayName ?: "模型"}下载失败", fontWeight = FontWeight.Bold) },
         text = {
             Column {
                 Text(
-                    text = "网络下载失败，请使用浏览器打开以下地址手动下载 .tar.bz2 压缩包，再通过「导入模型」安装：",
+                    text = "网络下载失败，可点击「重试」继续下载（自动续传，无需重新下载）；也可点击下方链接复制到浏览器手动下载 .tar.bz2 压缩包，再通过「导入模型」安装：",
                     fontSize = 14.sp,
                     color = TextSecondary
                 )
@@ -225,7 +234,12 @@ fun ModelFailedCard(
                     text = downloadUrl,
                     fontSize = 12.sp,
                     color = PrimaryDark,
-                    modifier = Modifier.padding(top = 10.dp)
+                    modifier = Modifier
+                        .padding(top = 10.dp)
+                        .clickable {
+                            clipboard.setText(AnnotatedString(downloadUrl))
+                            Toast.makeText(context, "下载链接已复制", Toast.LENGTH_SHORT).show()
+                        }
                 )
             }
         },
@@ -234,8 +248,11 @@ fun ModelFailedCard(
                 TextButton(onClick = onDismiss) {
                     Text("关闭", color = TextMuted)
                 }
-                Button(onClick = onImport) {
-                    Text("导入模型", color = androidx.compose.ui.graphics.Color.White)
+                TextButton(onClick = onImport) {
+                    Text("导入模型", color = PrimaryDark)
+                }
+                Button(onClick = onRetry) {
+                    Text("重试", color = androidx.compose.ui.graphics.Color.White)
                 }
             }
         }

@@ -1,4 +1,4 @@
-package com.example.AudioCut.ui.screens
+package com.example.audiocut.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -23,13 +23,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import com.example.AudioCut.data.model.AudioItem
-import com.example.AudioCut.ui.components.SegmentEditorHeader
-import com.example.AudioCut.ui.components.SegmentItemCard
-import com.example.AudioCut.ui.theme.*
-import com.example.AudioCut.viewmodel.MainViewModel
-import com.example.AudioCut.viewmodel.ClipViewModel
-import com.example.AudioCut.navigation.PlayerTab
+import com.example.audiocut.data.model.AudioItem
+import com.example.audiocut.ui.components.SegmentEditorHeader
+import com.example.audiocut.ui.components.SegmentItemCard
+import com.example.audiocut.ui.theme.*
+import com.example.audiocut.viewmodel.MainViewModel
+import com.example.audiocut.viewmodel.ClipViewModel
+import com.example.audiocut.navigation.PlayerTab
 
 /**
  * 剪辑页面（独立的标记片段管理与音频切片合成导出界面）

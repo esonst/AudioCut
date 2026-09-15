@@ -1,9 +1,9 @@
-package com.example.AudioCut
+package com.example.audiocut
 
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import com.example.AudioCut.di.AppContainer
+import com.example.audiocut.di.AppContainer
 
 class AudioCutApplication : Application() {
     companion object {

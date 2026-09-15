@@ -1,8 +1,8 @@
-package com.example.AudioCut.asr
+package com.example.audiocut.asr
 
-import com.example.AudioCut.data.model.TranscriptParagraph
-import com.example.AudioCut.data.model.TranscriptSentence
-import com.example.AudioCut.data.model.TranscriptWord
+import com.example.audiocut.data.model.TranscriptParagraph
+import com.example.audiocut.data.model.TranscriptSentence
+import com.example.audiocut.data.model.TranscriptWord
 import com.k2fsa.sherpa.onnx.OfflinePunctuation
 import com.k2fsa.sherpa.onnx.OfflinePunctuationConfig
 import com.k2fsa.sherpa.onnx.OfflinePunctuationModelConfig
@@ -405,8 +405,8 @@ class PunctuationSegmenter {
                         shouldBreak = true
                         punctuation = "。"
                     }
-                    // 短停顿 或 达到逗号字数：加逗号，不断句
-                    gap >= COMMA_GAP_MS || currentCharCount >= COMMA_CHAR_LIMIT -> {
+                    // 短停顿（未达长句上限）或 达到逗号字数：加逗号，不断句；限定 count < 长句上限，保证 100 字长句兜底分支可达
+                    gap >= COMMA_GAP_MS && currentCharCount < SENTENCE_MAX_CHAR || currentCharCount >= COMMA_CHAR_LIMIT -> {
                         shouldBreak = false
                         punctuation = "，"
                         currentCharCount = 0 // 加逗号后重置计数

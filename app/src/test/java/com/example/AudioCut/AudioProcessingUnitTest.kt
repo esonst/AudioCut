@@ -1,8 +1,8 @@
-package com.example.AudioCut
+package com.example.audiocut
 
-import com.example.AudioCut.data.model.*
-import com.example.AudioCut.data.repository.AudioRepository
-import com.example.AudioCut.ffmpeg.ExportAudioFormat
+import com.example.audiocut.data.model.*
+import com.example.audiocut.data.repository.AudioRepository
+import com.example.audiocut.ffmpeg.ExportAudioFormat
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -137,29 +137,29 @@ class AudioProcessingUnitTest {
     }
     @Test
     fun testAppScreenAndPlayerTabIndices() {
-        assertEquals(0, com.example.AudioCut.navigation.AppScreen.AUDIO_LIBRARY.pageIndex)
-        assertEquals(1, com.example.AudioCut.navigation.AppScreen.TRANSCRIPT.pageIndex)
-        assertEquals(2, com.example.AudioCut.navigation.AppScreen.CLIP.pageIndex)
-        assertEquals(3, com.example.AudioCut.navigation.AppScreen.TRIM.pageIndex)
-        assertEquals(4, com.example.AudioCut.navigation.AppScreen.CONVERT.pageIndex)
-        assertEquals(5, com.example.AudioCut.navigation.AppScreen.SETTINGS.pageIndex)
+        assertEquals(0, com.example.audiocut.navigation.AppScreen.AUDIO_LIBRARY.pageIndex)
+        assertEquals(1, com.example.audiocut.navigation.AppScreen.TRANSCRIPT.pageIndex)
+        assertEquals(2, com.example.audiocut.navigation.AppScreen.CLIP.pageIndex)
+        assertEquals(3, com.example.audiocut.navigation.AppScreen.TRIM.pageIndex)
+        assertEquals(4, com.example.audiocut.navigation.AppScreen.CONVERT.pageIndex)
+        assertEquals(5, com.example.audiocut.navigation.AppScreen.SETTINGS.pageIndex)
 
-        assertEquals(com.example.AudioCut.navigation.AppScreen.AUDIO_LIBRARY, com.example.AudioCut.navigation.AppScreen.fromIndex(0))
-        assertEquals(com.example.AudioCut.navigation.AppScreen.TRANSCRIPT, com.example.AudioCut.navigation.AppScreen.fromIndex(1))
-        assertEquals(com.example.AudioCut.navigation.AppScreen.CLIP, com.example.AudioCut.navigation.AppScreen.fromIndex(2))
-        assertEquals(com.example.AudioCut.navigation.AppScreen.TRIM, com.example.AudioCut.navigation.AppScreen.fromIndex(3))
-        assertEquals(com.example.AudioCut.navigation.AppScreen.CONVERT, com.example.AudioCut.navigation.AppScreen.fromIndex(4))
-        assertEquals(com.example.AudioCut.navigation.AppScreen.SETTINGS, com.example.AudioCut.navigation.AppScreen.fromIndex(5))
+        assertEquals(com.example.audiocut.navigation.AppScreen.AUDIO_LIBRARY, com.example.audiocut.navigation.AppScreen.fromIndex(0))
+        assertEquals(com.example.audiocut.navigation.AppScreen.TRANSCRIPT, com.example.audiocut.navigation.AppScreen.fromIndex(1))
+        assertEquals(com.example.audiocut.navigation.AppScreen.CLIP, com.example.audiocut.navigation.AppScreen.fromIndex(2))
+        assertEquals(com.example.audiocut.navigation.AppScreen.TRIM, com.example.audiocut.navigation.AppScreen.fromIndex(3))
+        assertEquals(com.example.audiocut.navigation.AppScreen.CONVERT, com.example.audiocut.navigation.AppScreen.fromIndex(4))
+        assertEquals(com.example.audiocut.navigation.AppScreen.SETTINGS, com.example.audiocut.navigation.AppScreen.fromIndex(5))
 
-        assertEquals(com.example.AudioCut.navigation.PlayerTab.TRANSCRIPT, com.example.AudioCut.navigation.PlayerTab.fromIndex(1))
-        assertEquals(com.example.AudioCut.navigation.PlayerTab.CLIP, com.example.AudioCut.navigation.PlayerTab.fromIndex(2))
+        assertEquals(com.example.audiocut.navigation.PlayerTab.TRANSCRIPT, com.example.audiocut.navigation.PlayerTab.fromIndex(1))
+        assertEquals(com.example.audiocut.navigation.PlayerTab.CLIP, com.example.audiocut.navigation.PlayerTab.fromIndex(2))
     }
 
 
     @Test
     fun testOfflineAsrParseTextToWords() {
         val mixedText = "你好 世界 hello world 这是一个测试。"
-        val words = com.example.AudioCut.asr.OfflineAsrEngine.parseTextToWords(mixedText)
+        val words = com.example.audiocut.asr.OfflineAsrEngine.parseTextToWords(mixedText)
         assertTrue(words.contains("你好") || (words.contains("你") && words.any { it.startsWith("好") }))
         assertTrue(words.contains("hello"))
         assertTrue(words.contains("world"))
@@ -177,7 +177,7 @@ class AudioProcessingUnitTest {
         val word4 = TranscriptWord(4L, "迎", 1200L, 1400L)
 
         val words = listOf(word1, word2, word3, word4)
-        val sentences = com.example.AudioCut.asr.OfflineAsrEngine.buildSentencesFromWords(words, 3000L)
+        val sentences = com.example.audiocut.asr.OfflineAsrEngine.buildSentencesFromWords(words, 3000L)
 
         assertTrue(sentences.isNotEmpty())
         val fullJoined = sentences.joinToString("") { it.text }
@@ -195,7 +195,7 @@ class AudioProcessingUnitTest {
         val word5 = TranscriptWord(5L, "天。", 950L, 1150L)
 
         val words = listOf(word1, word2, word3, word4, word5)
-        val sentences = com.example.AudioCut.asr.OfflineAsrEngine.buildSentencesFromWords(words, 2000L)
+        val sentences = com.example.audiocut.asr.OfflineAsrEngine.buildSentencesFromWords(words, 2000L)
 
         assertEquals(2, sentences.size)
         assertEquals("你好。", sentences[0].text)
@@ -209,7 +209,7 @@ class AudioProcessingUnitTest {
         val timestamps = floatArrayOf(0.0f, 0.0f, 0.0f, 0.0f, 0.10f, 0.30f, 0.50f, 0.80f, 1.00f, 1.20f)
         val durations = floatArrayOf(0.0f, 0.0f, 0.0f, 0.0f, 0.18f, 0.18f, 0.10f, 0.18f, 0.18f, 0.10f)
 
-        val words = com.example.AudioCut.asr.OfflineAsrEngine.processSenseVoiceResult(
+        val words = com.example.audiocut.asr.OfflineAsrEngine.processSenseVoiceResult(
             text = "你好，世界。",
             tokens = tokens,
             timestamps = timestamps,
@@ -230,7 +230,7 @@ class AudioProcessingUnitTest {
         assertEquals(1000L, words[3].startMs)
 
         // 验证句子生成
-        val sentences = com.example.AudioCut.asr.OfflineAsrEngine.buildSentencesFromWords(words, 2000L)
+        val sentences = com.example.audiocut.asr.OfflineAsrEngine.buildSentencesFromWords(words, 2000L)
         assertEquals(1, sentences.size)
         assertEquals("你好，世界。", sentences[0].text)
     }
@@ -238,7 +238,7 @@ class AudioProcessingUnitTest {
     @Test
     fun testSenseVoiceFallbackTextParsing() {
         val text = "今天天气真好，我们一起出去玩吧！"
-        val words = com.example.AudioCut.asr.OfflineAsrEngine.processSenseVoiceResult(
+        val words = com.example.audiocut.asr.OfflineAsrEngine.processSenseVoiceResult(
             text = text,
             tokens = emptyArray(),
             timestamps = floatArrayOf(),
@@ -251,7 +251,7 @@ class AudioProcessingUnitTest {
         val joined = words.joinToString("") { it.word }
         assertEquals("今天天气真好，我们一起出去玩吧！", joined)
 
-        val sentences = com.example.AudioCut.asr.OfflineAsrEngine.buildSentencesFromWords(words, 5000L)
+        val sentences = com.example.audiocut.asr.OfflineAsrEngine.buildSentencesFromWords(words, 5000L)
         assertTrue(sentences.isNotEmpty())
         assertEquals("今天天气真好，我们一起出去玩吧！", sentences[0].text)
     }
@@ -274,7 +274,7 @@ class AudioProcessingUnitTest {
         val timestamps = floatArrayOf(0.2f, 1.5f, 2.0f)
         val durations = floatArrayOf(0.3f, 0.4f, 0.4f)
 
-        val words = com.example.AudioCut.asr.OfflineAsrEngine.processSenseVoiceResult(
+        val words = com.example.audiocut.asr.OfflineAsrEngine.processSenseVoiceResult(
             text = "正确",
             tokens = tokens,
             timestamps = timestamps,
@@ -308,7 +308,7 @@ class AudioProcessingUnitTest {
         val timestamps = floatArrayOf(0.1f, 0.5f)
         val durations = floatArrayOf(0.3f, 0.3f)
 
-        val words = com.example.AudioCut.asr.OfflineAsrEngine.processSenseVoiceResult(
+        val words = com.example.audiocut.asr.OfflineAsrEngine.processSenseVoiceResult(
             text = "开始",
             tokens = tokens,
             timestamps = timestamps,

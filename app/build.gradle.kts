@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.AudioCut"
+    namespace = "com.example.audiocut"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.example.AudioCut"
+        applicationId = "com.example.audiocut"
         minSdk = 24
         targetSdk = 37
         versionCode = 1

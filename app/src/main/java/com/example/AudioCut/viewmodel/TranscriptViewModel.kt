@@ -1,21 +1,21 @@
-package com.example.AudioCut.viewmodel
+package com.example.audiocut.viewmodel
 
 import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.viewModelScope
-import com.example.AudioCut.asr.AsrConfig
-import com.example.AudioCut.asr.AsrManager
-import com.example.AudioCut.asr.ModelInstallCoordinator
-import com.example.AudioCut.asr.ModelManager
-import com.example.AudioCut.asr.PunctuationSegmenter
-import com.example.AudioCut.core.AppEventBus
-import com.example.AudioCut.data.model.AudioSegment
-import com.example.AudioCut.data.model.TranscriptResult
-import com.example.AudioCut.data.model.TranscriptWord
-import com.example.AudioCut.data.model.formatTranscriptTimestamp
-import com.example.AudioCut.data.model.transcriptTimestampLineLength
-import com.example.AudioCut.data.repository.PreferencesRepository
-import com.example.AudioCut.player.AudioPlayerManager
+import com.example.audiocut.asr.AsrConfig
+import com.example.audiocut.asr.AsrManager
+import com.example.audiocut.asr.ModelInstallCoordinator
+import com.example.audiocut.asr.ModelManager
+import com.example.audiocut.asr.PunctuationSegmenter
+import com.example.audiocut.core.AppEventBus
+import com.example.audiocut.data.model.AudioSegment
+import com.example.audiocut.data.model.TranscriptResult
+import com.example.audiocut.data.model.TranscriptWord
+import com.example.audiocut.data.model.formatTranscriptTimestamp
+import com.example.audiocut.data.model.transcriptTimestampLineLength
+import com.example.audiocut.data.repository.PreferencesRepository
+import com.example.audiocut.player.AudioPlayerManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -42,7 +42,7 @@ class TranscriptViewModel(
 ) : BaseViewModel(application, eventBus) {
 
     // ==================== 播放器状态（透传） ====================
-    val currentPlayingAudio: StateFlow<com.example.AudioCut.data.model.AudioItem?> = playerManager.currentAudio
+    val currentPlayingAudio: StateFlow<com.example.audiocut.data.model.AudioItem?> = playerManager.currentAudio
     val isPlaying: StateFlow<Boolean> = playerManager.isPlaying
     val currentPositionMs: StateFlow<Long> = playerManager.currentPositionMs
     val durationMs: StateFlow<Long> = playerManager.durationMs
@@ -239,7 +239,7 @@ class TranscriptViewModel(
         }
     }
 
-    private fun launchAsr(current: com.example.AudioCut.data.model.AudioItem, resumeIfPossible: Boolean) {
+    private fun launchAsr(current: com.example.audiocut.data.model.AudioItem, resumeIfPossible: Boolean) {
         if (asrJob?.isActive == true) return
         asrJob = viewModelScope.launch {
             try {

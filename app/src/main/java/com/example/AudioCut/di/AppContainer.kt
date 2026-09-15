@@ -1,13 +1,13 @@
-package com.example.AudioCut.di
+package com.example.audiocut.di
 
 import android.app.Application
-import com.example.AudioCut.asr.AsrManager
-import com.example.AudioCut.asr.ModelManager
-import com.example.AudioCut.core.AppEventBus
-import com.example.AudioCut.data.repository.AudioRepository
-import com.example.AudioCut.data.repository.PreferencesRepository
-import com.example.AudioCut.ffmpeg.AudioCutterConcatenator
-import com.example.AudioCut.player.AudioPlayerManager
+import com.example.audiocut.asr.AsrManager
+import com.example.audiocut.asr.ModelManager
+import com.example.audiocut.core.AppEventBus
+import com.example.audiocut.data.repository.AudioRepository
+import com.example.audiocut.data.repository.PreferencesRepository
+import com.example.audiocut.ffmpeg.AudioCutterConcatenator
+import com.example.audiocut.player.AudioPlayerManager
 
 /**
  * 手动依赖注入容器

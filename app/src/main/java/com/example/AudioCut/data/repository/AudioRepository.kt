@@ -1,4 +1,4 @@
-package com.example.AudioCut.data.repository
+package com.example.audiocut.data.repository
 
 import android.content.ContentUris
 import android.content.Context
@@ -7,7 +7,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
-import com.example.AudioCut.data.model.*
+import com.example.audiocut.data.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File

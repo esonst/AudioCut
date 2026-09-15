@@ -1,4 +1,4 @@
-package com.example.AudioCut.utils
+package com.example.audiocut.utils
 
 import android.content.ContentValues
 import android.content.Context

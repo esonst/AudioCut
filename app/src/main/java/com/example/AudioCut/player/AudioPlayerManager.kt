@@ -1,10 +1,10 @@
-package com.example.AudioCut.player
+package com.example.audiocut.player
 
 import android.content.Context
 import androidx.media3.common.*
 import androidx.media3.exoplayer.ExoPlayer
-import com.example.AudioCut.data.model.AudioItem
-import com.example.AudioCut.data.model.LoopMode
+import com.example.audiocut.data.model.AudioItem
+import com.example.audiocut.data.model.LoopMode
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -332,12 +332,16 @@ class AudioPlayerManager(
         val player = exoPlayer ?: return
         if (player.hasPreviousMediaItem()) {
             player.seekToPrevious()
-        } else {
-            val currentList = _playlist.value
-            if (currentList.isNotEmpty()) {
-                playAudio(currentList.last())
-            }
+            return
         }
+        // Fallback when ExoPlayer list degenerated (auto-next after single-track playback):
+        // switch by index in the full playlist and rebuild the ExoPlayer list
+        val currentList = _playlist.value
+        if (currentList.isEmpty()) return
+        val current = _currentAudio.value
+        val index = currentList.indexOfFirst { it.id == current?.id }
+        val target = if (index > 0) currentList[index - 1] else currentList.last()
+        playAudio(target, currentList)
     }
 
     /**
@@ -347,12 +351,16 @@ class AudioPlayerManager(
         val player = exoPlayer ?: return
         if (player.hasNextMediaItem()) {
             player.seekToNext()
-        } else {
-            val currentList = _playlist.value
-            if (currentList.isNotEmpty()) {
-                playAudio(currentList.first())
-            }
+            return
         }
+        // Fallback when ExoPlayer list degenerated (auto-next after single-track playback):
+        // switch by index in the full playlist and rebuild the ExoPlayer list
+        val currentList = _playlist.value
+        if (currentList.isEmpty()) return
+        val current = _currentAudio.value
+        val index = currentList.indexOfFirst { it.id == current?.id }
+        val target = if (index >= 0 && index < currentList.size - 1) currentList[index + 1] else currentList.first()
+        playAudio(target, currentList)
     }
 
     /**
@@ -376,7 +384,7 @@ class AudioPlayerManager(
                 if (current != null && currentList.isNotEmpty()) {
                     val currentIndex = currentList.indexOfFirst { it.id == current.id }
                     if (currentIndex >= 0 && currentIndex < currentList.size - 1) {
-                        playAudio(currentList[currentIndex + 1])
+                        playAudio(currentList[currentIndex + 1], currentList)
                     } else {
                         pause()
                         seekTo(0)

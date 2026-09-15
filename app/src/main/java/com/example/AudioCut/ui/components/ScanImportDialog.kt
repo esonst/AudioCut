@@ -1,4 +1,4 @@
-package com.example.AudioCut.ui.components
+package com.example.audiocut.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,9 +21,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.example.AudioCut.data.model.AudioItem
-import com.example.AudioCut.ui.theme.*
-import com.example.AudioCut.viewmodel.AudioLibraryViewModel
+import com.example.audiocut.data.model.AudioItem
+import com.example.audiocut.ui.theme.*
+import com.example.audiocut.viewmodel.AudioLibraryViewModel
 
 /**
  * 扫描本地文件并选择导入的对话框

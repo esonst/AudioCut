@@ -1,4 +1,4 @@
-package com.example.AudioCut.ui.screens
+package com.example.audiocut.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -19,10 +19,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.AudioCut.ui.components.ModelInstallDialogHost
-import com.example.AudioCut.ui.theme.*
-import com.example.AudioCut.viewmodel.MainViewModel
-import com.example.AudioCut.viewmodel.SettingsViewModel
+import com.example.audiocut.ui.components.ModelInstallDialogHost
+import com.example.audiocut.ui.theme.*
+import com.example.audiocut.viewmodel.MainViewModel
+import com.example.audiocut.viewmodel.SettingsViewModel
 
 /**
  * 设置界面：文稿设置卡片（开启文稿 / 开启排版优化 / 分块 / VAD，未开启文稿时隐藏其它设置）+ 数据管理 + 关于

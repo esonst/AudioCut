@@ -1,10 +1,10 @@
-package com.example.AudioCut.ffmpeg
+package com.example.audiocut.ffmpeg
 
 import android.content.Context
 import android.media.*
 import android.os.Environment
-import com.example.AudioCut.data.model.AudioItem
-import com.example.AudioCut.data.model.AudioSegment
+import com.example.audiocut.data.model.AudioItem
+import com.example.audiocut.data.model.AudioSegment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedOutputStream
@@ -95,9 +95,9 @@ class AudioCutterConcatenator(private val context: Context) {
 
             val success = when (targetFormat) {
                 ExportAudioFormat.WAV -> writeWavFile(outputFile, tempPcmFile, pcmInfo.sampleRate, pcmInfo.channels)
-                // 目前编码仅支持 M4A (AAC)，对于 MP3 转码需求，暂以 M4A 编码但使用 MP3 后缀或直接转为 M4A
+                // MP3 使用 FFmpeg libmp3lame 真编码（MediaCodec 无 MP3 编码器），保证 .mp3 后缀与内容一致
                 // 为了播放正确性，如果目标是 MP3 但没有 MP3 编码器，则回退到 M4A
-                ExportAudioFormat.MP3 -> encodePcmToM4a(outputFile, tempPcmFile, pcmInfo.sampleRate, pcmInfo.channels) { onProgress(0.7f + it * 0.3f) }
+                ExportAudioFormat.MP3 -> encodePcmToMp3(outputFile, tempPcmFile, pcmInfo.sampleRate, pcmInfo.channels) { onProgress(0.7f + it * 0.3f) }
                 ExportAudioFormat.M4A -> encodePcmToM4a(outputFile, tempPcmFile, pcmInfo.sampleRate, pcmInfo.channels) { onProgress(0.7f + it * 0.3f) }
             }
 
@@ -444,7 +444,10 @@ class AudioCutterConcatenator(private val context: Context) {
             var started = false
             val fis = FileInputStream(pcmFile)
             val bufferInfo = MediaCodec.BufferInfo()
-            val chunk = ByteArray(4096)
+            // AAC-LC 每帧固定 1024 采样，输入为 16-bit PCM：帧字节数 = 1024 x channels x 2
+            // （mono 2048 / stereo 4096），按整帧送入编码器，避免 mono 时 4096 非整帧导致编码失败
+            val frameBytes = (1024 * channels * 2).coerceAtLeast(1024)
+            val chunk = ByteArray(frameBytes)
             var ptsUs = 0L
             var inputEOS = false
             var outputEOS = false
@@ -512,5 +515,29 @@ class AudioCutterConcatenator(private val context: Context) {
         }
         
         return newFormat
+    }
+
+    /**
+     * 编码为 MP3：使用 FFmpeg libmp3lame 真编码（MediaCodec 不提供 MP3 编码器），
+     * 确保 .mp3 后缀与文件内容一致，可被系统播放器正确识别。
+     */
+    private suspend fun encodePcmToMp3(
+        file: File, pcmFile: File, sampleRate: Int, channels: Int, onProgress: suspend (Float) -> Unit
+    ): Boolean = withContext(Dispatchers.IO) {
+        val tmpOut = File(file.parentFile ?: file, "tmp_${file.name}")
+        try {
+            val command = "-hide_banner -loglevel error -f s16le -ar $sampleRate -ac $channels " +
+                    "-i \"${pcmFile.absolutePath}\" -codec:a libmp3lame -q:a 2 \"${tmpOut.absolutePath}\""
+            val session = com.arthenica.ffmpegkit.FFmpegKit.execute(command)
+            if (!com.arthenica.ffmpegkit.ReturnCode.isSuccess(session.returnCode)) return@withContext false
+            if (!tmpOut.exists() || tmpOut.length() == 0L) return@withContext false
+            if (file.exists()) file.delete()
+            if (!tmpOut.renameTo(file)) return@withContext false
+            onProgress(1f)
+            true
+        } catch (e: Exception) {
+            runCatching { tmpOut.delete() }
+            false
+        }
     }
 }
