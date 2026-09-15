@@ -52,7 +52,7 @@
 | 解压 | Apache Commons Compress 1.27.1（tar.bz2 / tar.gz） |
 | 架构 | 单模块 MVVM（ViewModel + Kotlin Flow + StateFlow） |
 | 数据持久化 | SharedPreferences（KTX）+ org.json |
-| 原生 ABI | arm64-v8a、x86_64（同时支持模拟器） |
+| 原生 ABI | arm64-v8a |
 
 ## 项目结构
 

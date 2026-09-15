@@ -17,9 +17,9 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // 重点：把c++共享库打包进apk，补齐 __gxx_personality_v0 符号
-        // sherpa-onnx AAR 支持 arm64-v8a / armeabi-v7a / x86 / x86_64，这里同时加入 x86_64 以支持模拟器与 ChromeOS
+        // 仅保留 arm64-v8a
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += listOf("arm64-v8a")
         }
         externalNativeBuild {
             cmake {
