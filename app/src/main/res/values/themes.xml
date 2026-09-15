@@ -1,4 +1,4 @@
 <resources>
 
-    <style name="Theme.Mp3Player" parent="Theme.MaterialComponents.Light" />
+    <style name="Theme.AudioCut" parent="Theme.MaterialComponents.Light" />
 </resources>

@@ -4,13 +4,13 @@ plugins {
 }
 
 android {
-    namespace = "com.example.mp3player"
+    namespace = "com.example.AudioCut"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.example.mp3player"
+        applicationId = "com.example.AudioCut"
         minSdk = 24
         targetSdk = 37
         versionCode = 1
@@ -39,6 +39,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // 本地 release 测试/打包：先使用 debug 签名密钥（正式发布请替换为正式 keystore 签名配置）
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
