@@ -75,19 +75,24 @@ class PreferencesRepository(context: Context) {
         try {
             val arr = JSONArray()
             for (a in audios) {
-                arr.put(
-                    JSONObject().apply {
-                        put("id", a.id)
-                        put("title", a.title)
-                        put("artist", a.artist)
-                        put("durationMs", a.durationMs)
-                        put("sizeBytes", a.sizeBytes)
-                        put("filePath", a.filePath)
-                        put("folderPath", a.folderPath)
-                        put("folderName", a.folderName)
-                        put("dateModifiedSec", a.dateModifiedSec)
-                    }
-                )
+                // 逐条容错：单条序列化异常不丢弃整批缓存
+                try {
+                    arr.put(
+                        JSONObject().apply {
+                            put("id", a.id)
+                            put("title", a.title)
+                            put("artist", a.artist)
+                            put("durationMs", a.durationMs)
+                            put("sizeBytes", a.sizeBytes)
+                            put("filePath", a.filePath)
+                            put("folderPath", a.folderPath)
+                            put("folderName", a.folderName)
+                            put("dateModifiedSec", a.dateModifiedSec)
+                            put("contentUri", a.contentUri?.toString() ?: "")
+                        }
+                    )
+                } catch (_: Exception) {
+                }
             }
             prefs.edit { putString(KEY_LIBRARY_CACHE, JSONObject().apply { put("audios", arr) }.toString()) }
         } catch (_: Exception) {
@@ -103,6 +108,12 @@ class PreferencesRepository(context: Context) {
             for (i in 0 until arr.length()) {
                 val obj = arr.getJSONObject(i)
                 val filePath = obj.optString("filePath", "")
+                val contentUriStr = obj.optString("contentUri", "")
+                val restoredUri = if (contentUriStr.isNotBlank()) {
+                    runCatching { Uri.parse(contentUriStr) }.getOrNull()
+                } else {
+                    if (filePath.isNotBlank()) Uri.fromFile(File(filePath)) else null
+                }
                 list.add(
                     AudioItem(
                         id = obj.optLong("id", 0L),
@@ -114,7 +125,7 @@ class PreferencesRepository(context: Context) {
                         folderPath = obj.optString("folderPath", ""),
                         folderName = obj.optString("folderName", ""),
                         dateModifiedSec = obj.optLong("dateModifiedSec", 0L),
-                        contentUri = if (filePath.isNotBlank()) Uri.fromFile(File(filePath)) else null
+                        contentUri = restoredUri
                     )
                 )
             }
@@ -506,6 +517,38 @@ class PreferencesRepository(context: Context) {
                 if (key.startsWith(KEY_TRANSCRIPT_PREFIX)) {
                     remove(key)
                 }
+            }
+        }
+    }
+
+    /**
+     * 迁移指定音频的关联数据到新 id（文件重命名导致 id 变化时调用）：
+     * 文稿、剪辑片段、裁剪范围、收藏状态
+     */
+    fun migrateAudioData(oldId: Long, newId: Long) {
+        if (oldId == newId) return
+        prefs.edit {
+            // 文稿
+            prefs.getString("$KEY_TRANSCRIPT_PREFIX$oldId", null)?.let {
+                putString("$KEY_TRANSCRIPT_PREFIX$newId", it)
+                remove("$KEY_TRANSCRIPT_PREFIX$oldId")
+            }
+            // 剪辑片段
+            prefs.getString("$KEY_SEGMENTS_PREFIX$oldId", null)?.let {
+                putString("$KEY_SEGMENTS_PREFIX$newId", it)
+                remove("$KEY_SEGMENTS_PREFIX$oldId")
+            }
+            // 裁剪范围
+            prefs.getString("$KEY_TRIM_PREFIX$oldId", null)?.let {
+                putString("$KEY_TRIM_PREFIX$newId", it)
+                remove("$KEY_TRIM_PREFIX$oldId")
+            }
+            // 收藏状态
+            val favorites = getFavoriteIds().toMutableSet()
+            if (favorites.contains(oldId)) {
+                favorites.remove(oldId)
+                favorites.add(newId)
+                putStringSet(KEY_FAVORITE_IDS, favorites.map { it.toString() }.toSet())
             }
         }
     }

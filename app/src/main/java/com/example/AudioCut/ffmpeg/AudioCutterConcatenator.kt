@@ -2,7 +2,10 @@ package com.example.audiocut.ffmpeg
 
 import android.content.Context
 import android.media.*
+import android.net.Uri
 import android.os.Environment
+import android.provider.MediaStore
+import android.provider.OpenableColumns
 import com.example.audiocut.data.model.AudioItem
 import com.example.audiocut.data.model.AudioSegment
 import kotlinx.coroutines.Dispatchers
@@ -25,7 +28,9 @@ data class ExportResult(
     val outputPath: String = "",
     val errorMessage: String = "",
     val durationMs: Long = 0L,
-    val format: ExportAudioFormat = ExportAudioFormat.M4A
+    val format: ExportAudioFormat = ExportAudioFormat.M4A,
+    /** 产物是否为带画面的视频（视频源保留画面导出） */
+    val outputIsVideo: Boolean = false
 )
 
 /**
@@ -33,6 +38,14 @@ data class ExportResult(
  * 支持流拷贝（无损且极速）和 PCM 重采样合并两种模式
  */
 class AudioCutterConcatenator(private val context: Context) {
+
+    companion object {
+        /** 纯音频扩展名：即使内嵌封面视频轨道也按音频处理，不判为视频 */
+        val AUDIO_ONLY_EXTENSIONS = setOf(
+            "mp3", "wav", "flac", "aac", "ogg", "opus",
+            "m4a", "m4b", "m4r", "amr", "wma", "ape", "alac", "mid", "midi"
+        )
+    }
 
     /**
      * 【新逻辑】极速无损预览与拼接：优先尝试流拷贝，失败自动降级到转码合并
@@ -126,6 +139,15 @@ class AudioCutterConcatenator(private val context: Context) {
         val validSegments = segments.filter { it.isSelected && it.endMs > it.startMs }
         if (validSegments.isEmpty()) return@withContext ExportResult(false, errorMessage = "无有效片段")
 
+        // 【视频输入】导出带画面的视频（MP4，保留原视频画面 + 处理后的音频）
+        if (isVideoSource(sourceAudio)) {
+            val outputDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: File(context.filesDir, "exports")
+            outputDir.mkdirs()
+            val baseName = customFileName ?: "Clip_${System.currentTimeMillis()}"
+            val videoFile = File(outputDir, "$baseName.mp4")
+            return@withContext exportVideoWithSegments(sourceAudio, validSegments, videoFile, onProgress)
+        }
+
         val outputDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: File(context.filesDir, "exports")
         outputDir.mkdirs()
         val baseName = customFileName ?: "Clip_${System.currentTimeMillis()}"
@@ -145,6 +167,156 @@ class AudioCutterConcatenator(private val context: Context) {
 
         // 2. 转码流程
         return@withContext generateTranscodedAudio(sourceAudio, validSegments, targetFormat, onProgress)
+    }
+
+    /**
+     * 判断源是否包含视频轨道（传入的是视频文件）
+     * 音频扩展名（m4a/mp3 等）即使内嵌封面视频轨道也按音频处理，
+     * 避免带封面的 m4a 被误判为视频
+     */
+    suspend fun isVideoSource(sourceAudio: AudioItem): Boolean = withContext(Dispatchers.IO) {
+        // 纯音频扩展名优先判音频（封面图常被编码为视频轨道，不算真实视频）
+        val ext = sourceAudio.filePath.substringAfterLast('.', "").lowercase()
+        if (ext in AUDIO_ONLY_EXTENSIONS) return@withContext false
+        try {
+            val extractor = MediaExtractor()
+            try {
+                if (sourceAudio.contentUri != null) extractor.setDataSource(context, sourceAudio.contentUri, null)
+                else extractor.setDataSource(sourceAudio.filePath)
+                for (i in 0 until extractor.trackCount) {
+                    val mime = extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME) ?: continue
+                    if (mime.startsWith("video/")) return@withContext true
+                }
+                false
+            } finally {
+                runCatching { extractor.release() }
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * 【视频输入】按片段精确裁剪并拼接，保留视频画面，输出 MP4（H.264 + AAC）
+     * 预览阶段仍为纯音频；保存/导出/覆盖/分享调用本方法，确保最终产物带画面
+     */
+    suspend fun exportVideoWithSegments(
+        sourceAudio: AudioItem,
+        segments: List<AudioSegment>,
+        outputFile: File,
+        onProgress: suspend (Float) -> Unit = {}
+    ): ExportResult = withContext(Dispatchers.IO) {
+        val validSegments = segments.filter { it.isSelected && it.endMs > it.startMs && (it.endMs - it.startMs) >= 100L }
+        if (validSegments.isEmpty()) return@withContext ExportResult(false, errorMessage = "无有效片段")
+
+        val (inputPath, tempSource) = resolveLocalPathForFfmpeg(sourceAudio)
+        if (inputPath == null) {
+            return@withContext ExportResult(false, errorMessage = "视频源无法访问，无法保留画面导出")
+        }
+
+        onProgress(0.05f)
+        val tmpOut = File(outputFile.parentFile ?: outputFile, "tmp_${outputFile.name}")
+        try {
+            val command = buildVideoConcatCommand(inputPath, validSegments, tmpOut.absolutePath)
+            val session = com.arthenica.ffmpegkit.FFmpegKit.execute(command)
+            if (!com.arthenica.ffmpegkit.ReturnCode.isSuccess(session.returnCode)) {
+                return@withContext ExportResult(false, errorMessage = "视频导出失败: ${session.output?.takeLast(300) ?: "ffmpeg 错误"}")
+            }
+            if (!tmpOut.exists() || tmpOut.length() == 0L) {
+                return@withContext ExportResult(false, errorMessage = "视频导出失败：输出为空")
+            }
+            if (outputFile.exists()) outputFile.delete()
+            if (!tmpOut.renameTo(outputFile)) {
+                tmpOut.copyTo(outputFile, overwrite = true)
+                tmpOut.delete()
+            }
+            onProgress(1f)
+            ExportResult(
+                true,
+                outputFile.absolutePath,
+                durationMs = validSegments.sumOf { it.durationMs },
+                outputIsVideo = true
+            )
+        } catch (e: Exception) {
+            runCatching { tmpOut.delete() }
+            ExportResult(false, errorMessage = "视频导出异常: ${e.localizedMessage}")
+        } finally {
+            // 清理为 FFmpeg 临时拷贝的源文件
+            tempSource?.delete()
+        }
+    }
+
+    /**
+     * FFmpeg 需要本地文件路径：
+     * 1. 本地文件路径存在则直接使用
+     * 2. MediaStore 查询 DATA 真实路径
+     * 3. 其它 content Uri 临时拷贝到缓存目录（处理完成后删除）
+     * @return (本地路径, 是否为临时拷贝文件)
+     */
+    private fun resolveLocalPathForFfmpeg(sourceAudio: AudioItem): Pair<String?, File?> {
+        val filePath = sourceAudio.filePath
+        if (filePath.isNotBlank() && File(filePath).exists()) return filePath to null
+
+        val uri = sourceAudio.contentUri ?: return null to null
+        // MediaStore DATA 路径
+        try {
+            context.contentResolver.query(uri, arrayOf(MediaStore.Audio.Media.DATA), null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val idx = c.getColumnIndex(MediaStore.Audio.Media.DATA)
+                    if (idx >= 0) {
+                        val p = c.getString(idx)
+                        if (!p.isNullOrBlank() && File(p).exists()) return p to null
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        }
+        // 临时拷贝到缓存目录
+        return try {
+            val name = getFileNameFromUri(uri) ?: "video_src_${System.currentTimeMillis()}.mp4"
+            val dest = File(context.cacheDir, "ffmpeg_src_${System.currentTimeMillis()}_$name")
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                dest.outputStream().use { output -> input.copyTo(output) }
+            }
+            if (dest.exists() && dest.length() > 0L) dest.absolutePath to dest else null to null
+        } catch (_: Exception) {
+            null to null
+        }
+    }
+
+    /** 从 content Uri 查询显示文件名 */
+    private fun getFileNameFromUri(uri: Uri): String? {
+        return try {
+            context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0) c.getString(idx) else null
+                } else null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * 构建 FFmpeg filter_complex 命令：对每个片段精确 trim（含视频+音频），再 concat 拼接
+     */
+    private fun buildVideoConcatCommand(inputPath: String, segments: List<AudioSegment>, outputPath: String): String {
+        val sb = StringBuilder("-hide_banner -loglevel error -i \"$inputPath\" -filter_complex \"")
+        val filters = mutableListOf<String>()
+        segments.forEachIndexed { index, seg ->
+            val s = "%.3f".format(seg.startMs / 1000.0)
+            val e = "%.3f".format(seg.endMs / 1000.0)
+            filters.add("[0:v]trim=start=$s:end=$e,setpts=PTS-STARTPTS[v$index]")
+            filters.add("[0:a]atrim=start=$s:end=$e,asetpts=PTS-STARTPTS[a$index]")
+        }
+        sb.append(filters.joinToString(";"))
+        val vLabels = segments.indices.joinToString("") { "[v$it]" }
+        val aLabels = segments.indices.joinToString("") { "[a$it]" }
+        sb.append(";${vLabels}${aLabels}concat=n=${segments.size}:v=1:a=1[vout][aout]\" ")
+        sb.append("-map \"[vout]\" -map \"[aout]\" ")
+        sb.append("-c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 192k -movflags +faststart \"$outputPath\"")
+        return sb.toString()
     }
 
     /**

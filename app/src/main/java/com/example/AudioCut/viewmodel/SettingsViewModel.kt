@@ -265,8 +265,13 @@ class SettingsViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val before = prefs.getAudioLibraryCache()
-                val refreshed = audioRepository.scanImportedAudios()
-                prefs.saveAudioLibraryCache(refreshed)
+                val referencedUris = prefs.getImportedAudioUris()
+                val refreshed = audioRepository.scanLibraryAudios(referencedUris)
+                // 引用集合持久化保留（仅删除时移除）：不因单次扫描结果（权限未就绪/源暂不可达）而裁剪
+                // 仅在确有结果时更新缓存，空结果保留原缓存，避免把音频库清空
+                if (refreshed.isNotEmpty()) {
+                    prefs.saveAudioLibraryCache(refreshed)
+                }
                 prefs.cleanupHiddenFilePaths()
                 val removedCount = (before.size - refreshed.size).coerceAtLeast(0)
                 withContext(Dispatchers.Main) {

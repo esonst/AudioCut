@@ -60,6 +60,9 @@ class ClipViewModel(
     private val _isGeneratingMergedPreview = MutableStateFlow(false)
     val isGeneratingMergedPreview: StateFlow<Boolean> = _isGeneratingMergedPreview.asStateFlow()
 
+    private val _mergedPreviewProgress = MutableStateFlow(0f)
+    val mergedPreviewProgress: StateFlow<Float> = _mergedPreviewProgress.asStateFlow()
+
     private val _mergedPreviewResult = MutableStateFlow<ExportResult?>(null)
     val mergedPreviewResult: StateFlow<ExportResult?> = _mergedPreviewResult.asStateFlow()
 
@@ -275,10 +278,12 @@ class ClipViewModel(
 
         viewModelScope.launch {
             _isGeneratingMergedPreview.value = true
+            _mergedPreviewProgress.value = 0f
             mergedPreviewPlayer.pause()
 
-            val result = audioCutter.generateFastPreview(audio, selected)
+            val result = audioCutter.generateFastPreview(audio, selected) { _mergedPreviewProgress.value = it }
             _isGeneratingMergedPreview.value = false
+            _mergedPreviewProgress.value = if (result.isSuccess) 1f else 0f
             _mergedPreviewResult.value = result
 
             if (result.isSuccess && File(result.outputPath).exists()) {
@@ -299,20 +304,39 @@ class ClipViewModel(
         }
     }
 
-    /** 保存预览到音乐库 */
+    /** 保存预览到音乐库（视频输入时重新导出带画面视频，预览文件仅含音频） */
     fun saveMergedPreviewToLibrary(customName: String? = null) {
         val preview = mergedPreviewResult.value ?: return
         if (!preview.isSuccess) return
         val source = File(preview.outputPath)
         if (!source.exists()) return
+        val audio = currentPlayingAudio.value
 
         viewModelScope.launch(Dispatchers.IO) {
+            _isExporting.value = true
+            _exportProgress.value = 0f
             try {
                 val dir = getApplication<Application>().getExternalFilesDir(Environment.DIRECTORY_MUSIC)
                     ?: Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
                 val fileName = customName?.ifBlank { null } ?: "Clip${System.currentTimeMillis()}"
-                val target = File(dir, "${fileName}.${source.extension}")
-                source.copyTo(target, overwrite = true)
+                val target: File
+                if (audio != null && audioCutter.isVideoSource(audio)) {
+                    val selected = _segments.value.filter { it.isSelected && it.endMs > it.startMs }
+                    if (selected.isEmpty()) {
+                        withContext(Dispatchers.Main) { emitToast("请先勾选有效片段") }
+                        return@launch
+                    }
+                    target = File(dir, "$fileName.mp4")
+                    val result = audioCutter.exportVideoWithSegments(audio, selected, target) { _exportProgress.value = it }
+                    if (!result.isSuccess) {
+                        withContext(Dispatchers.Main) { emitToast("保存失败: ${result.errorMessage}") }
+                        return@launch
+                    }
+                } else {
+                    target = File(dir, "${fileName}.${source.extension}")
+                    source.copyTo(target, overwrite = true)
+                    _exportProgress.value = 1f
+                }
                 withContext(Dispatchers.Main) {
                     emitToast("已保存至: ${target.absolutePath}")
                     eventBus.notifyAudioLibraryChanged()
@@ -321,6 +345,8 @@ class ClipViewModel(
                 withContext(Dispatchers.Main) {
                     emitToast("保存失败: ${e.message}")
                 }
+            } finally {
+                _isExporting.value = false
             }
         }
     }
@@ -358,60 +384,137 @@ class ClipViewModel(
         }
     }
 
-    /** 将合并预览保存到指定位置（SAF Uri）或默认音频目录，供预览卡片【保存】调用 */
+    /** 将合并预览保存到指定位置（SAF Uri）或默认音频目录；视频输入时保存带画面视频 */
     fun savePreviewToLocation(customName: String, targetUri: Uri? = null) {
         val preview = _mergedPreviewResult.value ?: return
         if (!preview.isSuccess) return
         val source = File(preview.outputPath)
         if (!source.exists()) return
+        val audio = currentPlayingAudio.value
 
         viewModelScope.launch(Dispatchers.IO) {
+            _isExporting.value = true
+            _exportProgress.value = 0f
             try {
-                if (targetUri != null) {
-                    getApplication<Application>().contentResolver.openOutputStream(targetUri)?.use { out ->
-                        source.inputStream().use { it.copyTo(out) }
+                val isVideo = audio != null && audioCutter.isVideoSource(audio)
+                if (isVideo) {
+                    val selected = _segments.value.filter { it.isSelected && it.endMs > it.startMs }
+                    if (selected.isEmpty()) {
+                        withContext(Dispatchers.Main) { emitToast("请先勾选有效片段") }
+                        return@launch
                     }
-                    withContext(Dispatchers.Main) { emitToast("已保存至所选位置") }
+                    if (targetUri != null) {
+                        val tempVideo = File(
+                            getApplication<Application>().cacheDir,
+                            "video_save_${System.currentTimeMillis()}.mp4"
+                        )
+                        val result = audioCutter.exportVideoWithSegments(audio, selected, tempVideo) { _exportProgress.value = it }
+                        if (!result.isSuccess) {
+                            withContext(Dispatchers.Main) { emitToast("保存失败: ${result.errorMessage}") }
+                            return@launch
+                        }
+                        getApplication<Application>().contentResolver.openOutputStream(targetUri)?.use { out ->
+                            tempVideo.inputStream().use { it.copyTo(out) }
+                        }
+                        tempVideo.delete()
+                        withContext(Dispatchers.Main) { emitToast("已保存至所选位置") }
+                    } else {
+                        val dir = getApplication<Application>().getExternalFilesDir(Environment.DIRECTORY_MUSIC)
+                            ?: Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+                        val name = customName.ifBlank { "Clip_${System.currentTimeMillis()}" }
+                            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                        val target = File(dir, "$name.mp4")
+                        val result = audioCutter.exportVideoWithSegments(audio, selected, target) { _exportProgress.value = it }
+                        if (!result.isSuccess) {
+                            withContext(Dispatchers.Main) { emitToast("保存失败: ${result.errorMessage}") }
+                            return@launch
+                        }
+                        withContext(Dispatchers.Main) { emitToast("已保存至: ${target.absolutePath}") }
+                    }
                 } else {
-                    val dir = getApplication<Application>().getExternalFilesDir(Environment.DIRECTORY_MUSIC)
-                        ?: Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
-                    val name = customName.ifBlank { "Clip_${System.currentTimeMillis()}" }
-                        .replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                    val target = File(dir, "$name.${source.extension}")
-                    source.copyTo(target, overwrite = true)
-                    withContext(Dispatchers.Main) { emitToast("已保存至: ${target.absolutePath}") }
+                    if (targetUri != null) {
+                        getApplication<Application>().contentResolver.openOutputStream(targetUri)?.use { out ->
+                            source.inputStream().use { it.copyTo(out) }
+                        }
+                        _exportProgress.value = 1f
+                        withContext(Dispatchers.Main) { emitToast("已保存至所选位置") }
+                    } else {
+                        val dir = getApplication<Application>().getExternalFilesDir(Environment.DIRECTORY_MUSIC)
+                            ?: Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+                        val name = customName.ifBlank { "Clip_${System.currentTimeMillis()}" }
+                            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                        val target = File(dir, "$name.${source.extension}")
+                        source.copyTo(target, overwrite = true)
+                        _exportProgress.value = 1f
+                        withContext(Dispatchers.Main) { emitToast("已保存至: ${target.absolutePath}") }
+                    }
                 }
                 withContext(Dispatchers.Main) { eventBus.notifyAudioLibraryChanged() }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { emitToast("保存失败: ${e.message}") }
+            } finally {
+                _isExporting.value = false
             }
         }
     }
 
-    /** 分享合并预览文件，供预览卡片【分享】调用 */
+    /** 分享合并预览文件；视频输入时先导出带画面视频再分享 */
     fun shareMergedPreview() {
         val preview = _mergedPreviewResult.value ?: run {
             emitToast("当前没有可分享的预览")
             return
         }
         if (!preview.isSuccess) return
-        val file = File(preview.outputPath)
-        if (!file.exists()) {
+        val source = File(preview.outputPath)
+        if (!source.exists()) {
             emitToast("预览文件不存在")
             return
         }
+        val audio = currentPlayingAudio.value
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val shareFile: File
+                if (audio != null && audioCutter.isVideoSource(audio)) {
+                    val selected = _segments.value.filter { it.isSelected && it.endMs > it.startMs }
+                    if (selected.isEmpty()) {
+                        withContext(Dispatchers.Main) { emitToast("请先勾选有效片段") }
+                        return@launch
+                    }
+                    shareFile = File(
+                        getApplication<Application>().cacheDir,
+                        "share_video_${System.currentTimeMillis()}.mp4"
+                    )
+                    val result = audioCutter.exportVideoWithSegments(audio, selected, shareFile)
+                    if (!result.isSuccess) {
+                        shareFile.delete()
+                        withContext(Dispatchers.Main) { emitToast("分享失败: ${result.errorMessage}") }
+                        return@launch
+                    }
+                } else {
+                    shareFile = source
+                }
+                withContext(Dispatchers.Main) { doShareMergedPreview(shareFile) }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { emitToast("分享失败: ${e.localizedMessage}") }
+            }
+        }
+    }
+
+    private fun doShareMergedPreview(file: File) {
         try {
             val context = getApplication<Application>()
             val uri = androidx.core.content.FileProvider.getUriForFile(
                 context, "${context.packageName}.fileprovider", file
             )
+            val isVideo = file.extension.equals("mp4", ignoreCase = true)
             val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                type = "audio/*"
+                type = if (isVideo) "video/*" else "audio/*"
                 putExtra(android.content.Intent.EXTRA_STREAM, uri)
                 addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(
-                android.content.Intent.createChooser(intent, "分享剪辑音频").apply {
+                android.content.Intent.createChooser(intent, "分享剪辑${if (isVideo) "视频" else "音频"}").apply {
                     addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
             )
@@ -434,6 +537,7 @@ class ClipViewModel(
 
         viewModelScope.launch {
             _isExporting.value = true
+            _exportProgress.value = 0f
             try {
                 withContext(Dispatchers.Main) {
                     stopAllPreview()
@@ -445,6 +549,26 @@ class ClipViewModel(
                     val sourceFile = File(audio.filePath)
                     if (!sourceFile.exists() || !sourceFile.isFile) {
                         null
+                    } else if (audioCutter.isVideoSource(audio)) {
+                        // 视频输入：生成带画面视频后覆盖（预览文件仅含音频，不能直接覆盖）
+                        val selected = _segments.value.filter { it.isSelected && it.endMs > it.startMs }
+                        if (selected.isEmpty()) {
+                            null
+                        } else {
+                            val tempVideo = File(
+                                getApplication<Application>().cacheDir,
+                                "overwrite_video_${System.currentTimeMillis()}.mp4"
+                            )
+                            val videoResult = audioCutter.exportVideoWithSegments(audio, selected, tempVideo) { _exportProgress.value = it }
+                            if (!videoResult.isSuccess) {
+                                tempVideo.delete()
+                                null
+                            } else {
+                                tempVideo.copyTo(sourceFile, overwrite = true)
+                                tempVideo.delete()
+                                queryAudioDurationMs(sourceFile.absolutePath).coerceAtLeast(videoResult.durationMs)
+                            }
+                        }
                     } else {
                         val previewFile = File(preview.outputPath)
                         previewFile.copyTo(sourceFile, overwrite = true)
@@ -522,8 +646,9 @@ class ClipViewModel(
                     targetFormat = format
                 ) { _exportProgress.value = it }
                 _exportResult.value = result
+                val formatLabel = if (result.outputIsVideo) "MP4 视频（含画面）" else "音频 ${result.format.name}"
                 emitToast(
-                    if (result.isSuccess) "音频拼接导出成功！格式：${result.format.name}，保存至：${result.outputPath}"
+                    if (result.isSuccess) "拼接导出成功！$formatLabel，保存至：${result.outputPath}"
                     else "导出失败: ${result.errorMessage}"
                 )
                 if (result.isSuccess) eventBus.notifyAudioLibraryChanged()

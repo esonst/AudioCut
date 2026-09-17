@@ -48,6 +48,7 @@ fun EditorListHeaderCard(
     isBusy: Boolean,
     progress: Float = 0f,
     isGeneratingPreview: Boolean,
+    previewProgress: Float = 0f,
     isPreviewPlaying: Boolean,
     previewResult: ExportResult?,
     previewTitle: String,
@@ -96,6 +97,24 @@ fun EditorListHeaderCard(
                         Text(if (previewResult != null) "试听" else "预览", fontSize = 12.sp)
                     }
                 }
+            }
+
+            // 点预览生成中：显示线性进度条，完成后消失
+            if (isGeneratingPreview) {
+                Spacer(modifier = Modifier.height(10.dp))
+                LinearProgressIndicator(
+                    progress = { previewProgress.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)),
+                    color = accent
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "正在生成预览... ${(previewProgress.coerceIn(0f, 1f) * 100).toInt()}%",
+                    fontSize = 11.sp,
+                    color = accent,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
+                )
             }
 
             if (previewResult != null && previewResult.isSuccess) {

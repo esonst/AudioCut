@@ -54,6 +54,9 @@ class TrimViewModel(
     private val _isGeneratingTrimPreview = MutableStateFlow(false)
     val isGeneratingTrimPreview: StateFlow<Boolean> = _isGeneratingTrimPreview.asStateFlow()
 
+    private val _trimPreviewProgress = MutableStateFlow(0f)
+    val trimPreviewProgress: StateFlow<Float> = _trimPreviewProgress.asStateFlow()
+
     private val _trimPreviewResult = MutableStateFlow<ExportResult?>(null)
     val trimPreviewResult: StateFlow<ExportResult?> = _trimPreviewResult.asStateFlow()
 
@@ -274,6 +277,7 @@ class TrimViewModel(
 
         viewModelScope.launch {
             _isGeneratingTrimPreview.value = true
+            _trimPreviewProgress.value = 0f
             trimPreviewPlayer.pause()
 
             val keepSegments = computeKeepSegments()
@@ -283,8 +287,9 @@ class TrimViewModel(
                 return@launch
             }
 
-            val result = audioCutter.generateFastPreview(audio, keepSegments)
+            val result = audioCutter.generateFastPreview(audio, keepSegments) { _trimPreviewProgress.value = it }
             _isGeneratingTrimPreview.value = false
+            _trimPreviewProgress.value = if (result.isSuccess) 1f else 0f
             _trimPreviewResult.value = result
 
             if (result.isSuccess && File(result.outputPath).exists()) {
@@ -331,28 +336,66 @@ class TrimViewModel(
         }
     }
 
-    /** 将裁剪预览保存到指定位置（SAF Uri）或默认音频目录，供预览卡片【保存】调用 */
+    /** 将裁剪预览保存到指定位置（SAF Uri）或默认音频目录；视频输入时保存带画面视频 */
     fun saveTrimPreviewAs(customName: String, targetUri: Uri? = null) {
         val preview = _trimPreviewResult.value ?: return
         if (!preview.isSuccess) return
         val source = File(preview.outputPath)
         if (!source.exists()) return
+        val audio = currentPlayingAudio.value
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                if (targetUri != null) {
-                    getApplication<Application>().contentResolver.openOutputStream(targetUri)?.use { out ->
-                        source.inputStream().use { it.copyTo(out) }
+                val isVideo = audio != null && audioCutter.isVideoSource(audio)
+                if (isVideo) {
+                    val keepSegments = computeKeepSegments()
+                    if (keepSegments.isEmpty()) {
+                        withContext(Dispatchers.Main) { emitToast("裁剪后无剩余内容，请调整裁剪区间") }
+                        return@launch
                     }
-                    withContext(Dispatchers.Main) { emitToast("已保存至所选位置") }
+                    if (targetUri != null) {
+                        val tempVideo = File(
+                            getApplication<Application>().cacheDir,
+                            "video_save_${System.currentTimeMillis()}.mp4"
+                        )
+                        val result = audioCutter.exportVideoWithSegments(audio, keepSegments, tempVideo)
+                        if (!result.isSuccess) {
+                            withContext(Dispatchers.Main) { emitToast("保存失败: ${result.errorMessage}") }
+                            return@launch
+                        }
+                        getApplication<Application>().contentResolver.openOutputStream(targetUri)?.use { out ->
+                            tempVideo.inputStream().use { it.copyTo(out) }
+                        }
+                        tempVideo.delete()
+                        withContext(Dispatchers.Main) { emitToast("已保存至所选位置") }
+                    } else {
+                        val dir = getApplication<Application>().getExternalFilesDir(Environment.DIRECTORY_MUSIC)
+                            ?: Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+                        val name = customName.ifBlank { "Trim_${System.currentTimeMillis()}" }
+                            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                        val target = File(dir, "$name.mp4")
+                        val result = audioCutter.exportVideoWithSegments(audio, keepSegments, target)
+                        if (!result.isSuccess) {
+                            withContext(Dispatchers.Main) { emitToast("保存失败: ${result.errorMessage}") }
+                            return@launch
+                        }
+                        withContext(Dispatchers.Main) { emitToast("已保存至: ${target.absolutePath}") }
+                    }
                 } else {
-                    val dir = getApplication<Application>().getExternalFilesDir(Environment.DIRECTORY_MUSIC)
-                        ?: Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
-                    val name = customName.ifBlank { "Trim_${System.currentTimeMillis()}" }
-                        .replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                    val target = File(dir, "$name.${source.extension}")
-                    source.copyTo(target, overwrite = true)
-                    withContext(Dispatchers.Main) { emitToast("已保存至: ${target.absolutePath}") }
+                    if (targetUri != null) {
+                        getApplication<Application>().contentResolver.openOutputStream(targetUri)?.use { out ->
+                            source.inputStream().use { it.copyTo(out) }
+                        }
+                        withContext(Dispatchers.Main) { emitToast("已保存至所选位置") }
+                    } else {
+                        val dir = getApplication<Application>().getExternalFilesDir(Environment.DIRECTORY_MUSIC)
+                            ?: Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+                        val name = customName.ifBlank { "Trim_${System.currentTimeMillis()}" }
+                            .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                        val target = File(dir, "$name.${source.extension}")
+                        source.copyTo(target, overwrite = true)
+                        withContext(Dispatchers.Main) { emitToast("已保存至: ${target.absolutePath}") }
+                    }
                 }
                 withContext(Dispatchers.Main) { eventBus.notifyAudioLibraryChanged() }
             } catch (e: Exception) {
@@ -432,10 +475,35 @@ class TrimViewModel(
             return
         }
 
-        // 优先复用预览文件
+        // 优先复用预览文件（视频输入时预览仅含音频，需重新导出带画面视频）
         val preview = _trimPreviewResult.value
         if (preview != null && preview.isSuccess && File(preview.outputPath).exists()) {
-            shareAudioFile(preview.outputPath)
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    if (audioCutter.isVideoSource(audio)) {
+                        val keepSegments = computeKeepSegments()
+                        if (keepSegments.isEmpty()) {
+                            withContext(Dispatchers.Main) { emitToast("裁剪后无剩余内容，请调整裁剪区间") }
+                            return@launch
+                        }
+                        val videoFile = File(
+                            getApplication<Application>().cacheDir,
+                            "share_video_${System.currentTimeMillis()}.mp4"
+                        )
+                        val result = audioCutter.exportVideoWithSegments(audio, keepSegments, videoFile)
+                        if (!result.isSuccess) {
+                            videoFile.delete()
+                            withContext(Dispatchers.Main) { emitToast("分享失败: ${result.errorMessage}") }
+                            return@launch
+                        }
+                        withContext(Dispatchers.Main) { shareAudioFile(videoFile.absolutePath, isVideo = true) }
+                    } else {
+                        shareAudioFile(preview.outputPath, isVideo = false)
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) { emitToast("分享失败: ${e.localizedMessage}") }
+                }
+            }
             return
         }
 
@@ -454,7 +522,7 @@ class TrimViewModel(
                     "Trim_${System.currentTimeMillis()}", resolveSourceFormat(audio)
                 )
                 if (result.isSuccess && File(result.outputPath).exists()) {
-                    shareAudioFile(result.outputPath)
+                    shareAudioFile(result.outputPath, isVideo = result.outputIsVideo)
                 } else {
                     emitToast("导出失败: ${result.errorMessage}")
                 }
@@ -539,7 +607,7 @@ class TrimViewModel(
         }
     }
 
-    private fun shareAudioFile(filePath: String) {
+    private fun shareAudioFile(filePath: String, isVideo: Boolean = false) {
         try {
             val context = getApplication<Application>()
             val file = File(filePath)
@@ -549,12 +617,12 @@ class TrimViewModel(
                 context, "${context.packageName}.fileprovider", file
             )
             val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                type = "audio/*"
+                type = if (isVideo) "video/*" else "audio/*"
                 putExtra(android.content.Intent.EXTRA_STREAM, uri)
                 addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(
-                android.content.Intent.createChooser(intent, "分享裁剪音频").apply {
+                android.content.Intent.createChooser(intent, "分享裁剪${if (isVideo) "视频" else "音频"}").apply {
                     addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
             )

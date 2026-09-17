@@ -19,6 +19,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.example.audiocut.ui.screens.MainScreen
 import com.example.audiocut.ui.theme.AudioCutTheme
 import com.example.audiocut.viewmodel.*
@@ -100,6 +103,7 @@ private fun PermissionHandler(
     settingsViewModel: SettingsViewModel
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     // 权限请求启动器
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -111,28 +115,31 @@ private fun PermissionHandler(
         }
     }
 
-    // 应用进入时请求存储权限
-    LaunchedEffect(Unit) {
-        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            arrayOf(
-                Manifest.permission.READ_MEDIA_AUDIO,
-                Manifest.permission.POST_NOTIFICATIONS
-            )
-        } else {
-            arrayOf(
-                Manifest.permission.READ_EXTERNAL_STORAGE,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE
-            )
-        }
+    // 每次应用回到前台（onResume）都检查存储权限：
+    // 覆盖「首次打开请求」与「从系统设置授权/关闭权限后返回」两种场景
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                arrayOf(
+                    Manifest.permission.READ_MEDIA_AUDIO,
+                    Manifest.permission.POST_NOTIFICATIONS
+                )
+            } else {
+                arrayOf(
+                    Manifest.permission.READ_EXTERNAL_STORAGE,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE
+                )
+            }
 
-        val allGranted = permissions.all {
-            ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
-        }
+            val allGranted = permissions.all {
+                ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+            }
 
-        if (!allGranted) {
-            permissionLauncher.launch(permissions)
-        } else {
-            audioLibraryViewModel.scanAudios()
+            if (!allGranted) {
+                permissionLauncher.launch(permissions)
+            } else {
+                audioLibraryViewModel.scanAudios()
+            }
         }
     }
 

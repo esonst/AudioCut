@@ -78,6 +78,7 @@ fun AudioLibraryScreen(mainViewModel: MainViewModel, viewModel: AudioLibraryView
 
     var showFilterSheet by remember { mutableStateOf(false) }
     var showScanDialog by remember { mutableStateOf(false) }
+    var renameTarget by remember { mutableStateOf<AudioItem?>(null) }
 
     // 新导入音频闪烁定位：滚动到高亮项
     LaunchedEffect(highlightedAudioId, displayAudios, browseMode) {
@@ -378,8 +379,9 @@ fun AudioLibraryScreen(mainViewModel: MainViewModel, viewModel: AudioLibraryView
                                             isFavorite = favoriteIds.contains(audio.id),
                                             onToggleFavorite = { viewModel.toggleFavorite(audio.id) },
                                             onLongClick = { viewModel.toggleAudioSelection(audio.id) },
-                                            onShare = { shareAudioFile(context, audio.filePath) },
-                                            onSetRingtone = { RingtoneHelper.setAsRingtone(context, audio.filePath) },
+                                            onRename = { renameTarget = audio },
+                                            onShare = { shareAudioFile(context, audio) },
+                                            onSetRingtone = { setRingtone(context, audio) },
                                             onConvert = { mainViewModel.navigateToConvertFormat(audio.filePath) },
                                             onDelete = { deleteFile -> viewModel.deleteAudio(audio.id, deleteFile) },
                                             onClick = {
@@ -411,8 +413,9 @@ fun AudioLibraryScreen(mainViewModel: MainViewModel, viewModel: AudioLibraryView
                                                 isFavorite = true,
                                                 onToggleFavorite = { viewModel.toggleFavorite(audio.id) },
                                                 onLongClick = { viewModel.toggleAudioSelection(audio.id) },
-                                                onShare = { shareAudioFile(context, audio.filePath) },
-                                                onSetRingtone = { RingtoneHelper.setAsRingtone(context, audio.filePath) },
+                                                onRename = { renameTarget = audio },
+                                                onShare = { shareAudioFile(context, audio) },
+                                                onSetRingtone = { setRingtone(context, audio) },
                                                 onConvert = { mainViewModel.navigateToConvertFormat(audio.filePath) },
                                                 onDelete = { deleteFile -> viewModel.deleteAudio(audio.id, deleteFile) },
                                                 onClick = {
@@ -464,6 +467,48 @@ fun AudioLibraryScreen(mainViewModel: MainViewModel, viewModel: AudioLibraryView
         )
     }
 
+    // 重命名对话框：本地/内部文件物理重命名，媒体库/文档引用同步更新
+    renameTarget?.let { audio ->
+        var renameInput by remember(audio.id) { mutableStateOf(audio.title.substringBeforeLast('.')) }
+
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("重命名音频") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedTextField(
+                        value = renameInput,
+                        onValueChange = { renameInput = it },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = "将重命名为「${renameInput.trim()}」",
+                        fontSize = 11.sp,
+                        color = TextSecondary
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val name = renameInput.trim()
+                        if (name.isNotEmpty()) {
+                            viewModel.renameAudio(audio.id, name)
+                            renameTarget = null
+                        }
+                    },
+                    enabled = renameInput.trim().isNotEmpty()
+                ) {
+                    Text("确定", color = PrimaryLight)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }) { Text("取消") }
+            }
+        )
+    }
+
     if (showScanDialog) {
         ScanImportDialog(
             viewModel = viewModel,
@@ -508,6 +553,7 @@ private fun AudioItemRowOptimized(
     isFavorite: Boolean = false,
     onToggleFavorite: () -> Unit = {},
     onLongClick: () -> Unit = {},
+    onRename: () -> Unit = {},
     onShare: () -> Unit = {},
     onSetRingtone: () -> Unit = {},
     onConvert: () -> Unit = {},
@@ -647,6 +693,14 @@ private fun AudioItemRowOptimized(
                 }
             )
             DropdownMenuItem(
+                text = { Text("重命名") },
+                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = PrimaryLight) },
+                onClick = {
+                    showLongPressMenu = false
+                    onRename()
+                }
+            )
+            DropdownMenuItem(
                 text = { Text("制作为铃声") },
                 leadingIcon = { Icon(Icons.Default.NotificationAdd, contentDescription = null, tint = PrimaryLight) },
                 onClick = {
@@ -739,13 +793,21 @@ private fun AudioItemRowOptimized(
 }
 
 /**
- * 分享音频文件（通过 FileProvider + 系统分享面板）
+ * 分享音频：
+ * - 引用导入（无本地副本）直接分享原 content Uri，不拷贝
+ * - 本地文件走 FileProvider
  */
-private fun shareAudioFile(context: Context, filePath: String) {
+private fun shareAudioFile(context: Context, audio: AudioItem) {
     try {
-        val file = java.io.File(filePath)
-        if (!file.exists()) return
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val uri = if (audio.contentUri != null &&
+            (audio.filePath.isBlank() || !java.io.File(audio.filePath).exists())
+        ) {
+            audio.contentUri
+        } else {
+            val file = java.io.File(audio.filePath)
+            if (!file.exists()) return
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        }
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "audio/*"
             putExtra(Intent.EXTRA_STREAM, uri)
@@ -753,6 +815,17 @@ private fun shareAudioFile(context: Context, filePath: String) {
         }
         context.startActivity(Intent.createChooser(shareIntent, "分享音频"))
     } catch (e: Exception) {}
+}
+
+/**
+ * 制作为铃声：本地文件走原路径方式；引用导入（无本地副本）走 content Uri 方式
+ */
+private fun setRingtone(context: Context, audio: AudioItem) {
+    if (audio.contentUri != null && (audio.filePath.isBlank() || !java.io.File(audio.filePath).exists())) {
+        RingtoneHelper.setAsRingtone(context, audio.contentUri, audio.title)
+    } else {
+        RingtoneHelper.setAsRingtone(context, audio.filePath)
+    }
 }
 
 @Composable

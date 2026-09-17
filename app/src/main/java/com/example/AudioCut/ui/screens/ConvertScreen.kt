@@ -1,6 +1,8 @@
 package com.example.AudioCut.ui.screens
 
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -47,6 +49,15 @@ fun ConvertScreen(mainViewModel: MainViewModel, convertViewModel: ConvertViewMod
     var showOutputNameEdit by remember { mutableStateOf(false) }
     // 进度/完成卡片的关闭状态（点击卡片关闭后不再显示，重新开始转换时重置）
     var progressCardDismissed by remember { mutableStateOf(false) }
+
+    // 另存为：系统路径选择器，选择目标位置后写入转换结果
+    val saveAsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("audio/*")
+    ) { uri ->
+        if (uri != null) {
+            convertViewModel.saveConvertedToLocation(context, uri)
+        }
+    }
 
     // 重新开始转换时重置卡片关闭状态
     LaunchedEffect(convertState.isConverting) {
@@ -422,10 +433,13 @@ fun ConvertScreen(mainViewModel: MainViewModel, convertViewModel: ConvertViewMod
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // 保存按钮
+                        // 另存为按钮：选择路径保存转换结果
                         OutlinedButton(
                             onClick = {
-                                convertViewModel.saveConvertedToLibrary()
+                                val ext = if (convertState.quality == ConvertQuality.EXTRACT) "m4a" else "mp3"
+                                val base = convertState.outputFilePath?.let { File(it).nameWithoutExtension }
+                                    ?: effectiveOutputName ?: "converted"
+                                saveAsLauncher.launch("$base.$ext")
                             },
                             modifier = Modifier
                                 .weight(1f)
@@ -436,7 +450,7 @@ fun ConvertScreen(mainViewModel: MainViewModel, convertViewModel: ConvertViewMod
                         ) {
                             Icon(Icons.Default.Save, null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("保存", fontSize = 13.sp)
+                            Text("另存为", fontSize = 13.sp)
                         }
 
                         // 分享按钮

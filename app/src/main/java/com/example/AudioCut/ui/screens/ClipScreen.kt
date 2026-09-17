@@ -48,6 +48,7 @@ fun ClipScreen(mainViewModel: MainViewModel, clipViewModel: ClipViewModel, modif
 
     // 合并试听状态
     val isGeneratingMergedPreview by clipViewModel.isGeneratingMergedPreview.collectAsState()
+    val mergedPreviewProgress by clipViewModel.mergedPreviewProgress.collectAsState()
     val mergedPreviewResult by clipViewModel.mergedPreviewResult.collectAsState()
     val isMergedPreviewPlaying by clipViewModel.isMergedPreviewPlaying.collectAsState()
     val mergedPreviewPositionMs by clipViewModel.mergedPreviewPositionMs.collectAsState()
@@ -163,6 +164,7 @@ fun ClipScreen(mainViewModel: MainViewModel, clipViewModel: ClipViewModel, modif
                             isBusy = isExporting,
                             progress = exportProgress,
                             isGeneratingPreview = isGeneratingMergedPreview,
+                            previewProgress = mergedPreviewProgress,
                             isPreviewPlaying = isMergedPreviewPlaying,
                             previewResult = mergedPreviewResult,
                             previewTitle = "剪辑预览 (${selectedSegs.size} 个片段)",

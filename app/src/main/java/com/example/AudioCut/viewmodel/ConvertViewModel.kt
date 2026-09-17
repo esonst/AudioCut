@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.os.Environment
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewModelScope
@@ -120,7 +121,10 @@ class ConvertViewModel(
     }
 
     private fun isVideoFile(path: String): Boolean {
-        val extFallback = path.substringAfterLast('.', "").lowercase() in VIDEO_EXTENSIONS
+        val ext = path.substringAfterLast('.', "").lowercase()
+        // 纯音频扩展名优先判音频（封面图常被编码为视频轨道，不算真实视频）
+        if (ext in AUDIO_EXTENSIONS) return false
+        val extFallback = ext in VIDEO_EXTENSIONS
         return try {
             val streams = FFprobeKit.getMediaInformation(path).mediaInformation?.streams.orEmpty()
             if (streams.isNotEmpty()) streams.any { it.type == "video" } else extFallback
@@ -130,6 +134,12 @@ class ConvertViewModel(
     }
 
     companion object {
+        /** 纯音频扩展名：即使内嵌封面视频轨道也按音频处理，不判为视频 */
+        private val AUDIO_EXTENSIONS = setOf(
+            "mp3", "wav", "flac", "aac", "ogg", "opus",
+            "m4a", "m4b", "m4r", "amr", "wma", "ape", "alac", "mid", "midi"
+        )
+
         /** 常见视频扩展名（ffprobe 探测失败时的兜底） */
         private val VIDEO_EXTENSIONS = setOf(
             "mp4", "m4v", "mkv", "avi", "webm", "3gp", "mov", "ts",
@@ -344,6 +354,32 @@ class ConvertViewModel(
             flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
         }
         context.startActivity(Intent.createChooser(intent, "分享音频文件"))
+    }
+
+    /** 另存为：将转换结果写入用户通过系统路径选择器指定的位置 */
+    fun saveConvertedToLocation(context: Context, destUri: Uri) {
+        val file = getConvertedFile() ?: run {
+            emitToast("没有可保存的文件")
+            return
+        }
+        if (!file.exists()) {
+            emitToast("文件不存在")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                context.contentResolver.openOutputStream(destUri, "w")?.use { out ->
+                    file.inputStream().use { it.copyTo(out) }
+                } ?: throw IllegalStateException("无法打开目标位置")
+                viewModelScope.launch(Dispatchers.Main) {
+                    emitToast("已另存为")
+                }
+            } catch (e: Exception) {
+                viewModelScope.launch(Dispatchers.Main) {
+                    emitToast("另存为失败: ${e.message}")
+                }
+            }
+        }
     }
 
     /** 保存到音频库 */

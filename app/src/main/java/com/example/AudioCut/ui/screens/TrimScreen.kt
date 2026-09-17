@@ -41,6 +41,7 @@ fun TrimScreen(mainViewModel: MainViewModel, trimViewModel: TrimViewModel, modif
 
     // 裁剪预览状态
     val isGeneratingTrimPreview by trimViewModel.isGeneratingTrimPreview.collectAsState()
+    val trimPreviewProgress by trimViewModel.trimPreviewProgress.collectAsState()
     val trimPreviewResult by trimViewModel.trimPreviewResult.collectAsState()
     val isPreviewPlaying by trimViewModel.isMergedPreviewPlaying.collectAsState()
     val previewPositionMs by trimViewModel.mergedPreviewPositionMs.collectAsState()
@@ -139,6 +140,7 @@ fun TrimScreen(mainViewModel: MainViewModel, trimViewModel: TrimViewModel, modif
                             isBusy = isTrimExporting,
                             progress = trimExportProgress,
                             isGeneratingPreview = isGeneratingTrimPreview,
+                            previewProgress = trimPreviewProgress,
                             isPreviewPlaying = isPreviewPlaying,
                             previewResult = trimPreviewResult,
                             previewTitle = "裁剪预览 (剪掉 ${selectedTrims.size} 段)",

@@ -23,13 +23,35 @@ object RingtoneHelper {
      * @return 是否设置成功
      */
     fun setAsRingtone(context: Context, filePath: String): Boolean {
-        return try {
-            val sourceFile = File(filePath)
-            if (!sourceFile.exists() || sourceFile.length() <= 0L) {
-                Toast.makeText(context, "音频文件不存在", Toast.LENGTH_SHORT).show()
-                return false
-            }
+        val sourceFile = File(filePath)
+        if (!sourceFile.exists() || sourceFile.length() <= 0L) {
+            Toast.makeText(context, "音频文件不存在", Toast.LENGTH_SHORT).show()
+            return false
+        }
+        return setAsRingtoneInternal(context, { output ->
+            sourceFile.inputStream().use { input -> input.copyTo(output); true }
+        }, sourceFile.name)
+    }
 
+    /**
+     * 将 content Uri 指向的音频制作为系统铃声（引用导入场景，直接流式读取，不落本地副本）
+     * @return 是否设置成功
+     */
+    fun setAsRingtone(context: Context, uri: Uri, displayName: String): Boolean {
+        val safeName = (displayName.ifBlank { "ringtone" }).replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        return setAsRingtoneInternal(context, { output ->
+            val input = context.contentResolver.openInputStream(uri)
+            if (input == null) false else input.use { it.copyTo(output); true }
+        }, safeName)
+    }
+
+    /** 铃声设置核心逻辑：copyContent 负责把源音频写入目标输出流 */
+    private fun setAsRingtoneInternal(
+        context: Context,
+        copyContent: (java.io.OutputStream) -> Boolean,
+        displayName: String
+    ): Boolean {
+        return try {
             // 所有Android版本统一校验WRITE_SETTINGS
             if (!Settings.System.canWrite(context)) {
                 Toast.makeText(context, "请开启【允许修改系统设置】权限，才能设置铃声", Toast.LENGTH_LONG).show()
@@ -38,7 +60,6 @@ object RingtoneHelper {
             }
 
             val resolver = context.contentResolver
-            val displayName = sourceFile.name
 
             val collection = mediaCollection()
             val existingUri = queryExistingRingtone(resolver, collection, displayName)
@@ -49,9 +70,11 @@ object RingtoneHelper {
 
             if (existingUri == null) {
                 resolver.openOutputStream(ringtoneUri)?.use { output ->
-                    sourceFile.inputStream().use { input -> input.copyTo(output) }
+                    if (!copyContent(output)) {
+                        return false
+                    }
                 } ?: return false
-                if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q){
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val updateValues = ContentValues().apply {
                         put(MediaStore.Audio.Media.IS_PENDING, 0)
                     }
@@ -64,7 +87,7 @@ object RingtoneHelper {
                 RingtoneManager.TYPE_RINGTONE,
                 ringtoneUri
             )
-            Toast.makeText(context, "已设置为铃声: ${sourceFile.nameWithoutExtension}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "已设置为铃声: ${File(displayName).nameWithoutExtension}", Toast.LENGTH_SHORT).show()
             true
         } catch (e: Exception) {
             e.printStackTrace()

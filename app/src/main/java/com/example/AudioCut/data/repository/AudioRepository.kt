@@ -2,6 +2,7 @@ package com.example.audiocut.data.repository
 
 import android.content.ContentUris
 import android.content.Context
+import android.content.Intent
 import android.database.Cursor
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -124,15 +125,17 @@ class AudioRepository(private val context: Context? = null) {
      */
     suspend fun resolveUriToAudioItem(uri: Uri): AudioItem? = withContext(Dispatchers.IO) {
         if (context == null) return@withContext null
-        
+
         // 如果是 File Uri
         if (uri.scheme == "file") {
             val file = File(uri.path ?: return@withContext null)
             if (!file.exists()) return@withContext null
+            val duration = probeDuration(file.absolutePath)
             return@withContext AudioItem(
                 id = file.hashCode().toLong(),
                 title = file.name,
                 filePath = file.absolutePath,
+                durationMs = duration,
                 sizeBytes = file.length(),
                 dateModifiedSec = file.lastModified() / 1000,
                 contentUri = uri
@@ -158,8 +161,10 @@ class AudioRepository(private val context: Context? = null) {
                     val title = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)) ?: displayName
                     val artist = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)) ?: "未知艺术家"
                     val duration = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION))
-                    val size = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE))
+                    var size = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE))
                     val filePath = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)) ?: ""
+                    // MediaStore 未提供大小时直接从 Uri 探测，保证列表正确显示文件大小
+                    if (size <= 0L) size = probeSize(context, uri)
 
                     return@withContext AudioItem(
                         id = id,
@@ -179,14 +184,75 @@ class AudioRepository(private val context: Context? = null) {
         // Fallback for URIs that don't support projection
         try {
             val fileName = getFileNameFromUri(uri) ?: "未知音频"
+            // 尝试解析真实本地路径（部分 provider 提供 DATA 列），持久化后重启仍可直接访问
+            var filePath = ""
+            try {
+                context.contentResolver.query(uri, arrayOf(MediaStore.Audio.Media.DATA), null, null, null)?.use { c ->
+                    if (c.moveToFirst()) {
+                        val idx = c.getColumnIndex(MediaStore.Audio.Media.DATA)
+                        if (idx >= 0) {
+                            val p = c.getString(idx)
+                            if (!p.isNullOrBlank() && File(p).exists()) filePath = p
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+            }
+            // 从 Uri 直接读取元数据（不拷贝文件）
+            val duration = probeDuration(context, uri)
+            val size = probeSize(context, uri)
             return@withContext AudioItem(
                 id = uri.hashCode().toLong(),
                 title = fileName,
+                filePath = filePath,
+                durationMs = duration,
+                sizeBytes = size,
                 contentUri = uri,
                 dateModifiedSec = System.currentTimeMillis() / 1000
             )
         } catch (e: Exception) {
             null
+        }
+    }
+
+    /** 从本地文件路径探测时长（毫秒），失败返回 0 */
+    private fun probeDuration(filePath: String): Long {
+        return try {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(filePath)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            } finally {
+                runCatching { retriever.release() }
+            }
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
+    /** 从 content Uri 直接探测时长（毫秒），失败返回 0 */
+    private fun probeDuration(context: Context, uri: Uri): Long {
+        return try {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(context, uri)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            } finally {
+                runCatching { retriever.release() }
+            }
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
+    /** 从 content Uri 直接探测文件大小（字节），失败返回 0 */
+    private fun probeSize(context: Context, uri: Uri): Long {
+        return try {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
+                afd.length.coerceAtLeast(0L)
+            } ?: 0L
+        } catch (_: Exception) {
+            0L
         }
     }
 
@@ -212,7 +278,8 @@ class AudioRepository(private val context: Context? = null) {
     }
 
     /**
-     * 扫描 App 内部音频目录 (导入的音/视频文件都放在这里)
+     * 扫描 App 内部音频目录（历史已拷贝导入的文件 / 转换导出产物）
+     * 新的导入均为 Uri 引用方式（不拷贝），不再写入该目录
      */
     suspend fun scanImportedAudios(): List<AudioItem> = withContext(Dispatchers.IO) {
         val audioList = mutableListOf<AudioItem>()
@@ -250,44 +317,187 @@ class AudioRepository(private val context: Context? = null) {
     }
 
     /**
-     * 将音频文件从 Uri 导入到 App 内部存储目录
+     * 将 Uri 加入音频库（引用优先，分享类文件生成副本）
+     * - Document/OpenDocument/媒体库 Uri：保持引用（持久化权限或媒体权限），不拷贝文件
+     * - 分享/打开等临时授权 Uri（无法持久化、非媒体库）：生成副本到应用私有目录，
+     *   保证应用重启后仍可访问；列表/文稿随副本持久化
+     * - 元数据（名称/时长/大小）从 Uri 直接解析
      */
-    suspend fun importAudioFile(uri: Uri): AudioItem? = withContext(Dispatchers.IO) {
+    suspend fun importAudioByReference(uri: Uri): AudioItem? = withContext(Dispatchers.IO) {
         if (context == null) return@withContext null
         try {
-            val fileName = getFileNameFromUri(uri) ?: "imported_${System.currentTimeMillis()}.mp3"
-            val destDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC) ?: context.filesDir
-            val destFile = File(destDir, fileName)
-            
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                destFile.outputStream().use { output ->
-                    input.copyTo(output)
+            var persistable = false
+            if (uri.scheme == "content") {
+                try {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                    persistable = true
+                } catch (_: Exception) {
+                    // 分享/打开等场景为临时授权，无法跨重启持久化
                 }
             }
-            
-            // 重新解析导入后的文件并获取时长
-            val retriever = MediaMetadataRetriever()
-            var duration = 0L
-            try {
-                retriever.setDataSource(destFile.absolutePath)
-                duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() ?: 0L
-            } catch (_: Exception) {
-            } finally {
-                try { retriever.release() } catch (e: Exception) {}
-            }
 
-            return@withContext AudioItem(
-                id = destFile.absolutePath.hashCode().toLong(),
-                title = fileName,
-                filePath = destFile.absolutePath,
-                durationMs = duration,
-                sizeBytes = destFile.length(),
-                dateModifiedSec = destFile.lastModified() / 1000,
-                contentUri = Uri.fromFile(destFile)
+            val item = resolveUriToAudioItem(uri)
+            if (item == null) return@withContext null
+
+            // 临时授权且非媒体库 Uri（媒体库 Uri 有 READ_MEDIA_AUDIO 即可长期访问）：
+            // 分享过来的文件生成副本到应用私有目录，保证重启后仍可访问
+            if (uri.scheme == "content" && !persistable && uri.authority != "media") {
+                copyToInternalStorage(uri, item) ?: item
+            } else {
+                item
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * 将临时授权的 content Uri 生成副本到应用私有音频目录（仅分享/打开等无法持久化授权的场景），
+     * 返回指向内部副本的 AudioItem；拷贝失败返回 null
+     */
+    private fun copyToInternalStorage(uri: Uri, item: AudioItem): AudioItem? {
+        return try {
+            val appContext = context ?: return null
+            val dir = appContext.getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC)
+                ?: appContext.filesDir
+            dir.mkdirs()
+            val rawExt = item.filePath.substringAfterLast('.', "")
+                .ifBlank { item.contentUri?.lastPathSegment?.substringAfterLast('.', "") ?: "" }
+            val ext = rawExt.lowercase().ifBlank { "m4a" }
+            val safeTitle = item.title.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(60).ifBlank { "shared" }
+            val dest = File(dir, "${System.currentTimeMillis()}_$safeTitle.$ext")
+            appContext.contentResolver.openInputStream(uri)?.use { input ->
+                dest.outputStream().use { output -> input.copyTo(output) }
+            } ?: return null
+            if (!dest.exists() || dest.length() == 0L) {
+                dest.delete()
+                return null
+            }
+            item.copy(
+                id = dest.absolutePath.hashCode().toLong(),
+                filePath = dest.absolutePath,
+                contentUri = Uri.fromFile(dest),
+                sizeBytes = dest.length(),
+                dateModifiedSec = dest.lastModified() / 1000
             )
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * 重命名音频库条目：
+     * - 本地/内部文件：物理重命名文件（保留原扩展名）
+     * - 媒体库引用：更新 MediaStore 的 DISPLAY_NAME 与 TITLE（id 不变，文稿保留）
+     * - 文档 Uri 引用：通过 DocumentsContract 重命名源文件；不支持时仅修改显示名
+     * 返回重命名后的 AudioItem；失败返回 null（名称冲突/文件不可写等）
+     */
+    suspend fun renameAudioItem(item: AudioItem, newName: String): AudioItem? = withContext(Dispatchers.IO) {
+        val appContext = context ?: return@withContext null
+        val cleanName = newName.trim().replace(Regex("[\\\\/:*?\"<>|]"), "_").take(80)
+        if (cleanName.isBlank()) return@withContext null
+
+        try {
+            // 1. 本地/内部文件：物理重命名
+            val file = item.filePath.takeIf { it.isNotBlank() }?.let { File(it) }?.takeIf { it.exists() }
+            if (file != null) {
+                val ext = file.extension.ifBlank { "m4a" }
+                val newFile = File(file.parent, "$cleanName.$ext")
+                if (newFile.exists() && newFile.absolutePath != file.absolutePath) return@withContext null
+                if (!file.renameTo(newFile)) return@withContext null
+                return@withContext item.copy(
+                    id = newFile.absolutePath.hashCode().toLong(),
+                    title = "$cleanName.$ext",
+                    filePath = newFile.absolutePath,
+                    contentUri = Uri.fromFile(newFile),
+                    dateModifiedSec = newFile.lastModified() / 1000
+                )
+            }
+
+            // 2. 媒体库引用：更新 DISPLAY_NAME 与 TITLE（id = mediaId 不变，关联文稿自动保留）
+            val contentUri = item.contentUri
+            if (contentUri != null && contentUri.authority == "media") {
+                val ext = item.filePath.substringAfterLast('.', "").ifBlank { "m4a" }
+                val values = android.content.ContentValues().apply {
+                    put(MediaStore.Audio.Media.DISPLAY_NAME, "$cleanName.$ext")
+                    put(MediaStore.Audio.Media.TITLE, cleanName)
+                }
+                val updated = appContext.contentResolver.update(contentUri, values, null, null)
+                if (updated > 0) {
+                    val newPath = try {
+                        appContext.contentResolver.query(
+                            contentUri, arrayOf(MediaStore.Audio.Media.DATA), null, null, null
+                        )?.use { c ->
+                            if (c.moveToFirst()) {
+                                val idx = c.getColumnIndex(MediaStore.Audio.Media.DATA)
+                                if (idx >= 0) c.getString(idx) ?: item.filePath else item.filePath
+                            } else item.filePath
+                        } ?: item.filePath
+                    } catch (_: Exception) {
+                        item.filePath
+                    }
+                    return@withContext item.copy(title = cleanName, filePath = newPath)
+                }
+                return@withContext null
+            }
+
+            // 3. 文档 Uri 引用：尝试重命名源文件
+            if (contentUri != null) {
+                val ext = item.filePath.substringAfterLast('.', "").ifBlank {
+                    item.contentUri?.lastPathSegment?.substringAfterLast('.', "") ?: ""
+                }.ifBlank { "m4a" }
+                try {
+                    val newUri = android.provider.DocumentsContract.renameDocument(
+                        appContext.contentResolver, contentUri, "$cleanName.$ext"
+                    )
+                    if (newUri != null) {
+                        return@withContext item.copy(
+                            id = newUri.hashCode().toLong(),
+                            title = "$cleanName.$ext",
+                            contentUri = newUri
+                        )
+                    }
+                } catch (_: Exception) {
+                    // 不支持重命名的 provider，回退为仅修改显示名
+                }
+                return@withContext item.copy(title = cleanName)
+            }
+
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * 扫描已引用的外部音频（Uri 引用列表）
+     * 解析失败（源文件被移除/权限失效）的条目自动剔除
+     */
+    suspend fun scanReferencedAudios(uriStrings: Set<String>): List<AudioItem> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<AudioItem>()
+        uriStrings.forEach { uriString ->
+            runCatching { Uri.parse(uriString) }.getOrNull()?.let { uri ->
+                resolveUriToAudioItem(uri)?.let { list.add(it) }
+            }
+        }
+        list
+    }
+
+    /**
+     * 扫描完整音频库：
+     * 1. 外部引用（不拷贝的 Uri 引用导入）
+     * 2. 应用内部目录（历史已拷贝文件 / 转换导出产物）
+     * 按内容 Uri 去重，按修改时间倒序
+     */
+    suspend fun scanLibraryAudios(uriStrings: Set<String>): List<AudioItem> = withContext(Dispatchers.IO) {
+        val referenced = scanReferencedAudios(uriStrings)
+        val internal = scanImportedAudios()
+        (referenced + internal)
+            .distinctBy { it.contentUri?.toString() ?: it.filePath }
+            .sortedByDescending { it.dateModifiedSec }
     }
 
     /**
